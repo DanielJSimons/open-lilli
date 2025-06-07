@@ -42,6 +42,53 @@ ai-ppt generate \
   --output presentation.pptx
 ```
 
+### Regenerating Slides
+
+Use the `regenerate` command to update specific slides in an existing deck:
+
+```bash
+ai-ppt regenerate \
+  --template templates/corporate.pptx \
+  --input-pptx existing.pptx \
+  --slides 2,4 \
+  --output updated.pptx
+```
+
+This command extracts the selected slides, regenerates their content and visuals, and patches the presentation with the new versions.
+
+### Auto-Refine Loop
+
+Passing `--auto-refine` to `ai-ppt generate` enables iterative refinement. The tool reviews the output after each generation and regenerates failing slides until all quality gates pass or `--max-iterations` is reached.
+
+### Corporate Asset Library
+
+Configure a `CorporateAssetLibrary` using `AssetLibraryConfig`:
+
+```python
+from open_lilli.corporate_asset_library import CorporateAssetLibrary
+from open_lilli.models import AssetLibraryConfig
+
+asset_config = AssetLibraryConfig(
+    dam_api_url="https://api.company.com/assets",
+    api_key="YOUR_API_KEY",
+    brand_guidelines_strict=True,
+    fallback_to_external=False,
+)
+asset_library = CorporateAssetLibrary(asset_config)
+```
+
+Provide this via `VisualExcellenceConfig` or use `--strict-brand` on the CLI to enforce only corporate-approved assets.
+
+### Ingesting Decks for ML Layouts
+
+Build the training corpus for layout recommendations by ingesting existing presentations:
+
+```bash
+ai-ppt ingest --pptx historical_decks/ --template templates/corporate.pptx
+```
+
+This extracts slides, creates embeddings and updates `layouts.vec` for improved ML-based layout suggestions.
+
 ## Development
 
 ### Setup
