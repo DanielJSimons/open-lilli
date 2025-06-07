@@ -49,6 +49,22 @@ class TemplateParser:
         self.layout_map = self._index_layouts()
         self.palette = self._extract_theme_colors()
         self.template_style = self._extract_template_style()
+
+        if self.template_style:
+            default_lang_fonts = {
+                "ar": "Arial Unicode MS",
+                "he": "David Libre",
+                "fa": "Tahoma",
+                "ja": "MS Gothic",
+                "ko": "Malgun Gothic",
+                "zh": "SimSun"
+            }
+            if not self.template_style.language_specific_fonts:
+                self.template_style.language_specific_fonts = default_lang_fonts
+            else:
+                merged_fonts = default_lang_fonts.copy()
+                merged_fonts.update(self.template_style.language_specific_fonts)
+                self.template_style.language_specific_fonts = merged_fonts
         
         logger.info(f"Template analysis complete. Layout map: {self.layout_map}")
         logger.info(f"Template style extracted with {len(self.template_style.placeholder_styles)} placeholder styles")

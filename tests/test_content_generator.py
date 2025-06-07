@@ -309,3 +309,119 @@ class TestContentGenerator:
         
         with pytest.raises(ValueError, match="Empty response from OpenAI"):
             self.generator._call_openai_with_retries("test prompt")
+
+
+# Tests for T-54 (Cultural Tone Profiles)
+class TestContentGeneratorToneProfiles:
+
+    def setup_method(self):
+        """Set up test fixtures for tone profile tests."""
+        self.mock_client = Mock(spec=OpenAI)
+        # ContentGenerator will be instantiated per test, patching _load_tone_profiles_static
+
+    def create_test_slide(self) -> SlidePlan:
+        """Create a test slide."""
+        return SlidePlan(
+            index=1,
+            slide_type="content",
+            title="Test Title",
+            bullets=["Test bullet 1"],
+            speaker_notes="Test notes"
+        )
+
+    @pytest.mark.parametrize("language, expected_tone_string, expect_german_instructions", [
+        ("ja", "Tone: test polite", False),
+        ("de", "Tone: test concise", True),
+        ("fr", "Tone: default_tone", False), # Assumes "fr" not in mocked profiles
+        ("en", "Tone: default_tone", False), # Assumes "en" not in mocked profiles
+    ])
+    def test_build_content_prompt_with_tone_profiles(
+        self, mocker, language, expected_tone_string, expect_german_instructions
+    ):
+        """Test _build_content_prompt with various language tone profiles."""
+
+        mock_profiles = {
+            "ja": "test polite",
+            "de": "test concise",
+            # "fr" and "en" are intentionally omitted to test fallback
+        }
+        mocker.patch(
+            "open_lilli.content_generator._load_tone_profiles_static",
+            return_value=mock_profiles
+        )
+
+        # Instantiate ContentGenerator AFTER patching
+        generator = ContentGenerator(self.mock_client)
+
+        slide = self.create_test_slide()
+        # config.tone will be the default if no specific profile for the language is found
+        config = GenerationConfig(tone="default_tone", complexity_level="basic")
+
+        prompt = generator._build_content_prompt(
+            slide, config, style_guidance="Be brief", language=language
+        )
+
+        assert expected_tone_string in prompt
+        if expect_german_instructions:
+            assert "For German, use the formal 'Sie' form." in prompt
+        else:
+            assert "For German, use the formal 'Sie' form." not in prompt
+
+        # Check that other parts are still present
+        assert "Be brief" in prompt # style_guidance
+        assert "Test Title" in prompt # slide content
+        assert f"complexity_level: {config.complexity_level}" in prompt
+
+    def test_build_content_prompt_with_empty_or_invalid_profile(self, mocker):
+        """Test fallback when a language profile is empty or invalid."""
+        mock_profiles = {
+            "es": "",  # Empty profile
+            "it": None, # Invalid profile (None)
+        }
+        mocker.patch(
+            "open_lilli.content_generator._load_tone_profiles_static",
+            return_value=mock_profiles
+        )
+
+        generator = ContentGenerator(self.mock_client)
+        slide = self.create_test_slide()
+        config = GenerationConfig(tone="default_config_tone", complexity_level="standard")
+
+        # Test with "es" (empty profile)
+        prompt_es = generator._build_content_prompt(slide, config, None, "es")
+        assert "Tone: default_config_tone" in prompt_es
+
+        # Test with "it" (invalid profile)
+        prompt_it = generator._build_content_prompt(slide, config, None, "it")
+        assert "Tone: default_config_tone" in prompt_it
+
+    def test_tone_profile_loading_file_not_found(self, mocker, caplog):
+        """Test behavior when tone profiles file is not found."""
+        mocker.patch("open_lilli.content_generator.TONE_PROFILES_PATH.exists", return_value=False)
+
+        # _load_tone_profiles_static is called during ContentGenerator initialization
+        ContentGenerator(self.mock_client)
+
+        assert "Tone profiles file not found" in caplog.text
+        # Check that it falls back to empty profiles, which means default tones from config will be used.
+        # This is implicitly tested by test_build_content_prompt_with_tone_profiles's "fr" case.
+
+    def test_tone_profile_loading_invalid_yaml(self, mocker, caplog):
+        """Test behavior when tone profiles file is not valid YAML."""
+        mocker.patch("open_lilli.content_generator.TONE_PROFILES_PATH.exists", return_value=True)
+        # Mock yaml.safe_load to simulate invalid YAML (e.g., returning a list instead of dict)
+        mocker.patch("yaml.safe_load", return_value=["not", "a", "dict"])
+
+        ContentGenerator(self.mock_client)
+
+        assert "is not a valid dictionary" in caplog.text
+
+    def test_tone_profile_loading_exception(self, mocker, caplog):
+        """Test behavior when an exception occurs during tone profile loading."""
+        mocker.patch("open_lilli.content_generator.TONE_PROFILES_PATH.exists", return_value=True)
+        mocker.patch("builtins.open", side_effect=Exception("Test file read error"))
+
+        ContentGenerator(self.mock_client)
+
+        assert "Error loading tone profiles" in caplog.text
+        assert "Test file read error" in caplog.text

@@ -17,6 +17,7 @@ from .exceptions import StyleError, ValidationConfigError
 
 logger = logging.getLogger(__name__)
 
+RTL_LANGUAGES = ["ar", "he", "fa"]
 
 class SlideAssembler:
     """Assembles PowerPoint presentations from templates and generated content."""
@@ -62,8 +63,9 @@ class SlideAssembler:
         """
         output_path = Path(output_path)
         visuals = visuals or {}
+        language = outline.language # Get language from outline
         
-        logger.info(f"Assembling presentation with {len(slides)} slides")
+        logger.info(f"Assembling presentation with {len(slides)} slides in language: {language}")
         logger.info(f"Output path: {output_path}")
         
         # Create new presentation from template
@@ -77,7 +79,7 @@ class SlideAssembler:
         # Add slides
         for slide_plan in slides:
             try:
-                self._add_slide(prs, slide_plan, visuals.get(slide_plan.index, {}))
+                self._add_slide(prs, slide_plan, visuals.get(slide_plan.index, {}), language) # Pass language
                 logger.debug(f"Added slide {slide_plan.index}: {slide_plan.title}")
             except Exception as e:
                 logger.error(f"Failed to add slide {slide_plan.index}: {e}")
@@ -101,6 +103,7 @@ class SlideAssembler:
         input_pptx: Path,
         updated_slides: List[SlidePlan],
         target_indices: List[int],
+        language: str, # Add language parameter
         visuals: Optional[Dict[int, Dict[str, str]]] = None,
         output_path: Union[str, Path] = "updated.pptx"
     ) -> Path:
@@ -111,6 +114,7 @@ class SlideAssembler:
             input_pptx: Path to existing presentation
             updated_slides: List of all slide plans (with some updated)
             target_indices: List of slide indices that were updated
+            language: Language code for the presentation
             visuals: Dictionary mapping slide indices to visual file paths
             output_path: Path to save the patched presentation
             
@@ -120,7 +124,7 @@ class SlideAssembler:
         output_path = Path(output_path)
         visuals = visuals or {}
         
-        logger.info(f"Patching presentation with {len(target_indices)} updated slides")
+        logger.info(f"Patching presentation with {len(target_indices)} updated slides in language: {language}")
         logger.info(f"Target indices: {target_indices}")
         logger.info(f"Output path: {output_path}")
         
@@ -150,7 +154,7 @@ class SlideAssembler:
                 
                 # Replace the slide at this index
                 self._replace_slide_at_index(
-                    prs, target_idx, slide_plan, visuals.get(target_idx, {})
+                    prs, target_idx, slide_plan, visuals.get(target_idx, {}), language # Pass language
                 )
                 
                 logger.debug(f"Replaced slide {target_idx}: {slide_plan.title}")
@@ -172,7 +176,8 @@ class SlideAssembler:
         prs: Presentation,
         slide_idx: int,
         slide_plan: SlidePlan,
-        slide_visuals: Dict[str, str]
+        slide_visuals: Dict[str, str],
+        language: str # Add language parameter
     ) -> None:
         """
         Replace a slide at a specific index with new content.
@@ -182,6 +187,7 @@ class SlideAssembler:
             slide_idx: Index of slide to replace
             slide_plan: New slide plan with content
             slide_visuals: Visual assets for the slide
+            language: Language code for the presentation
         """
         # Get the existing slide
         existing_slide = prs.slides[slide_idx]
@@ -204,13 +210,13 @@ class SlideAssembler:
             logger.debug(f"Layout change requested but using existing layout for slide {slide_idx}")
         
         # Add new content
-        self._add_title(existing_slide, slide_plan.title)
+        self._add_title(existing_slide, slide_plan.title, language) # Pass language
         
         # Add content based on slide type
         if slide_plan.slide_type == "title":
-            self._add_title_slide_content(existing_slide, slide_plan)
+            self._add_title_slide_content(existing_slide, slide_plan, language) # Pass language
         elif slide_plan.bullets:
-            self._add_bullet_content(existing_slide, slide_plan.bullets)
+            self._add_bullet_content(existing_slide, slide_plan.bullets, language) # Pass language
         
         # Add visuals
         if "native_chart" in slide_visuals and slide_plan.chart_data:
@@ -272,7 +278,8 @@ class SlideAssembler:
         self,
         prs: Presentation,
         slide_plan: SlidePlan,
-        slide_visuals: Dict[str, str]
+        slide_visuals: Dict[str, str],
+        language: str # Add language parameter
     ) -> None:
         """Add a single slide to the presentation."""
         
@@ -286,13 +293,14 @@ class SlideAssembler:
         slide = prs.slides.add_slide(layout)
         
         # Add title
-        self._add_title(slide, slide_plan.title)
+        self._add_title(slide, slide_plan.title, language) # Pass language
         
         # Add content based on slide type
         if slide_plan.slide_type == "title":
-            self._add_title_slide_content(slide, slide_plan)
+            # Assuming _add_title_slide_content also needs language for RTL subtitle
+            self._add_title_slide_content(slide, slide_plan, language) # Pass language
         elif slide_plan.bullets:
-            self._add_bullet_content(slide, slide_plan.bullets)
+            self._add_bullet_content(slide, slide_plan.bullets, language) # Pass language
         
         # Add visuals
         if "native_chart" in slide_visuals and slide_plan.chart_data:
@@ -313,7 +321,7 @@ class SlideAssembler:
         if slide_plan.speaker_notes:
             self._add_speaker_notes(slide, slide_plan.speaker_notes)
 
-    def _add_title(self, slide, title: str) -> None:
+    def _add_title(self, slide, title: str, language: str) -> None: # Add language
         """Add title to slide."""
         try:
             if hasattr(slide.shapes, 'title') and slide.shapes.title:
@@ -332,6 +340,18 @@ class SlideAssembler:
                         run = paragraph.runs[0]
                         run.font.bold = True
                         
+                        # Proactive font selection
+                        specific_font_name = self.template_parser.template_style.language_specific_fonts.get(language.lower())
+                        if specific_font_name:
+                            run.font.name = specific_font_name
+                            logger.debug(f"Applied language-specific font '{specific_font_name}' for title in language '{language.lower()}'")
+
+                # RTL alignment for title
+                if language.lower() in RTL_LANGUAGES:
+                    if title_shape.text_frame and title_shape.text_frame.paragraphs:
+                        for para in title_shape.text_frame.paragraphs:
+                            para.alignment = PP_ALIGN.RIGHT
+
                 logger.debug(f"Added title: {title}")
             else:
                 logger.warning("No title placeholder found in slide")
@@ -339,27 +359,32 @@ class SlideAssembler:
         except Exception as e:
             logger.error(f"Failed to add title '{title}': {e}")
 
-    def _add_title_slide_content(self, slide, slide_plan: SlidePlan) -> None:
+    def _add_title_slide_content(self, slide, slide_plan: SlidePlan, language: str) -> None: # Add language
         """Add content specific to title slides."""
         try:
             # Try to find subtitle placeholder
             for placeholder in slide.placeholders:
                 if placeholder.placeholder_format.type == 3:  # SUBTITLE
                     subtitle_text = ""
-                    if slide_plan.bullets:
+                    if slide_plan.bullets: # Assuming bullets might be used as subtitle parts
                         subtitle_text = " • ".join(slide_plan.bullets[:2])
                     elif hasattr(slide_plan, 'subtitle') and slide_plan.subtitle:
                         subtitle_text = slide_plan.subtitle
                     
                     if subtitle_text:
                         placeholder.text = subtitle_text
+                        # Apply RTL alignment for subtitle if needed
+                        if language.lower() in RTL_LANGUAGES:
+                            if placeholder.text_frame and placeholder.text_frame.paragraphs:
+                                for para in placeholder.text_frame.paragraphs:
+                                    para.alignment = PP_ALIGN.RIGHT
                         logger.debug(f"Added subtitle: {subtitle_text}")
                     break
                     
         except Exception as e:
             logger.error(f"Failed to add title slide content: {e}")
 
-    def _add_bullet_content(self, slide, bullets: List[str]) -> None:
+    def _add_bullet_content(self, slide, bullets: List[str], language: str) -> None: # Add language
         """Add bullet points to slide."""
         try:
             # Find content placeholder
@@ -403,6 +428,18 @@ class SlideAssembler:
                     if p.runs:
                         run = p.runs[0]
                         run.font.size = Pt(18)  # Default size
+
+                        # Proactive font selection for bullets
+                        specific_font_name = self.template_parser.template_style.language_specific_fonts.get(language.lower())
+                        if specific_font_name:
+                            run.font.name = specific_font_name
+                            logger.debug(f"Applied language-specific font '{specific_font_name}' for bullets in language '{language.lower()}'")
+
+                # RTL alignment for bullets
+                if language.lower() in RTL_LANGUAGES:
+                    for para in text_frame.paragraphs:
+                        if para.text and para.text.strip(): # Only align if paragraph has text
+                            para.alignment = PP_ALIGN.RIGHT
                 
                 logger.debug(f"Added {len(bullets)} bullet points")
             else:
@@ -602,7 +639,8 @@ class SlideAssembler:
         prs: Presentation,
         layout_name: str,
         title: str,
-        content: Optional[List[str]] = None
+            content: Optional[List[str]] = None,
+            language: str = "en" # Add language, default to "en" for existing calls
     ) -> None:
         """
         Create a slide using a specific layout by name.
@@ -612,6 +650,7 @@ class SlideAssembler:
             layout_name: Name of the layout to use
             title: Slide title
             content: Optional list of content items
+            language: Language code for text alignment
         """
         try:
             layout_index = self.template_parser.get_layout_index(layout_name)
@@ -619,12 +658,16 @@ class SlideAssembler:
             slide = prs.slides.add_slide(layout)
             
             # Add title
+            # Assuming this internal method might not need language if it's simple title setting
+            # or if it calls the main _add_title, it should pass language.
+            # For now, let's assume it's a simple set, or we need to trace its callers.
+            # Let's assume _add_title needs language.
             if hasattr(slide.shapes, 'title'):
-                slide.shapes.title.text = title
+                 self._add_title(slide, title, language) # Pass language
             
             # Add content if provided
             if content:
-                self._add_bullet_content(slide, content)
+                self._add_bullet_content(slide, content, language) # Pass language
             
             logger.debug(f"Created slide with layout '{layout_name}': {title}")
             
@@ -742,26 +785,32 @@ class SlideAssembler:
         
         return issues
 
-    def validate_presentation_style(self, prs: Presentation) -> None:
+    def validate_presentation_style(self, prs: Presentation, language: Optional[str] = "en") -> None: # Add language
         """
         Validate the entire presentation against template style rules.
         
         Args:
             prs: Presentation object to validate
+            language: Language code for the presentation (for font validation)
             
         Raises:
             StyleError: If style violations are found and validation is enabled
         """
+        # Ensure language is available, default to "en" if not passed (e.g. from patch_existing_presentation if not updated)
+        # However, assemble method should always pass it from outline.language.
+        # For patch_existing_presentation, it's now a required parameter.
+        # So, language should always be valid.
+
         if not self.validation_config.enabled or self.validation_config.mode == "disabled":
             logger.debug("Style validation disabled")
             return
         
-        logger.info("Starting presentation style validation")
+        logger.info(f"Starting presentation style validation for language: {language}")
         violations = []
         
         for slide_index, slide in enumerate(prs.slides):
             try:
-                slide_violations = self._validate_slide_style(slide, slide_index)
+                slide_violations = self._validate_slide_style(slide, slide_index, language) # Pass language
                 violations.extend(slide_violations)
             except Exception as e:
                 logger.warning(f"Failed to validate slide {slide_index}: {e}")
@@ -787,13 +836,14 @@ class SlideAssembler:
         else:
             logger.info("Style validation passed successfully")
 
-    def _validate_slide_style(self, slide, slide_index: int) -> List[Dict[str, any]]:
+    def _validate_slide_style(self, slide, slide_index: int, language: str) -> List[Dict[str, any]]: # Add language
         """
         Validate style for a single slide.
         
         Args:
             slide: Slide object to validate
             slide_index: Index of the slide
+            language: Language code for the presentation
             
         Returns:
             List of violation dictionaries
@@ -802,7 +852,7 @@ class SlideAssembler:
         
         for shape in slide.shapes:
             try:
-                shape_violations = self._validate_shape_style(shape, slide_index)
+                shape_violations = self._validate_shape_style(shape, slide_index, language) # Pass language
                 violations.extend(shape_violations)
             except Exception as e:
                 logger.debug(f"Failed to validate shape in slide {slide_index}: {e}")
@@ -810,13 +860,14 @@ class SlideAssembler:
         
         return violations
 
-    def _validate_shape_style(self, shape, slide_index: int) -> List[Dict[str, any]]:
+    def _validate_shape_style(self, shape, slide_index: int, language: str) -> List[Dict[str, any]]: # Add language
         """
         Validate style for a single shape.
         
         Args:
             shape: Shape object to validate
             slide_index: Index of the slide containing this shape
+            language: Language code for the presentation
             
         Returns:
             List of violation dictionaries
@@ -837,7 +888,7 @@ class SlideAssembler:
         # Validate each paragraph
         for para_index, paragraph in enumerate(text_frame.paragraphs):
             para_violations = self._validate_paragraph_style(
-                paragraph, placeholder_type, slide_index, para_index
+                paragraph, placeholder_type, slide_index, para_index, language # Pass language
             )
             violations.extend(para_violations)
         
@@ -858,7 +909,8 @@ class SlideAssembler:
         paragraph, 
         placeholder_type: Optional[int], 
         slide_index: int, 
-        para_index: int
+        para_index: int,
+        language: str # Add language
     ) -> List[Dict[str, any]]:
         """
         Validate style for a single paragraph.
@@ -868,6 +920,7 @@ class SlideAssembler:
             placeholder_type: Type of placeholder containing this paragraph
             slide_index: Index of the slide
             para_index: Index of the paragraph
+            language: Language code for the presentation
             
         Returns:
             List of violation dictionaries
@@ -879,13 +932,13 @@ class SlideAssembler:
             return violations
         
         # Get expected style for this placeholder type
-        expected_font = self._get_expected_font(placeholder_type, paragraph.level)
+        expected_font = self._get_expected_font(placeholder_type, paragraph.level, language) # Pass language
         expected_bullet = self._get_expected_bullet(placeholder_type, paragraph.level)
         
         # Validate each run in the paragraph
         for run_index, run in enumerate(paragraph.runs):
             run_violations = self._validate_run_style(
-                run, expected_font, slide_index, para_index, run_index
+                run, expected_font, slide_index, para_index, run_index, language # Pass language
             )
             violations.extend(run_violations)
         
@@ -904,7 +957,8 @@ class SlideAssembler:
         expected_font: Optional[FontInfo], 
         slide_index: int, 
         para_index: int, 
-        run_index: int
+        run_index: int,
+        language: str # Add language
     ) -> List[Dict[str, any]]:
         """
         Validate style for a single text run.
@@ -915,6 +969,7 @@ class SlideAssembler:
             slide_index: Index of the slide
             para_index: Index of the paragraph
             run_index: Index of the run
+            language: Language code for the presentation
             
         Returns:
             List of violation dictionaries
@@ -932,9 +987,18 @@ class SlideAssembler:
             expected_font.name and 
             font.name and 
             font.name != expected_font.name):
-            violations.append({
-                'type': 'font_name',
-                'description': f"Font name mismatch at {location}",
+
+            # Check if the actual font.name is a valid language-specific override
+            is_valid_override = False
+            if language and self.template_parser and self.template_parser.template_style:
+                specific_font_name = self.template_parser.template_style.language_specific_fonts.get(language.lower())
+                if specific_font_name and font.name == specific_font_name:
+                    is_valid_override = True
+
+            if not is_valid_override:
+                violations.append({
+                    'type': 'font_name',
+                    'description': f"Font name mismatch at {location}",
                 'expected': expected_font.name,
                 'actual': font.name,
                 'slide_index': slide_index
@@ -1129,27 +1193,40 @@ class SlideAssembler:
         hex_color = hex_color.lstrip('#')
         return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
 
-    def _get_expected_font(self, placeholder_type: Optional[int], level: int = 0) -> Optional[FontInfo]:
+    def _get_expected_font(self, placeholder_type: Optional[int], level: int = 0, language: Optional[str] = None) -> Optional[FontInfo]: # Add language
         """
         Get expected font for a placeholder type and indentation level.
         
         Args:
             placeholder_type: PowerPoint placeholder type number
             level: Indentation level
+            language: Language code for considering specific fonts
             
         Returns:
             Expected FontInfo or None
         """
+        base_font: Optional[FontInfo] = None
         if not placeholder_type:
-            return self.template_parser.template_style.master_font
-        
-        # For bullet points, get font from bullet style
-        bullet_info = self.template_parser.get_bullet_style_for_level(placeholder_type, level)
-        if bullet_info and bullet_info.font:
-            return bullet_info.font
-        
-        # Fall back to placeholder default font
-        return self.template_parser.get_font_for_placeholder_type(placeholder_type)
+            base_font = self.template_parser.template_style.master_font
+        else:
+            # For bullet points, get font from bullet style
+            bullet_info = self.template_parser.get_bullet_style_for_level(placeholder_type, level)
+            if bullet_info and bullet_info.font:
+                base_font = bullet_info.font
+            else:
+                # Fall back to placeholder default font
+                base_font = self.template_parser.get_font_for_placeholder_type(placeholder_type)
+
+        if language and self.template_parser and self.template_parser.template_style:
+            specific_font_name = self.template_parser.template_style.language_specific_fonts.get(language.lower())
+            if specific_font_name and base_font:
+                # Create a new FontInfo object with the name overridden
+                # Assuming FontInfo is a Pydantic model, create a new one or copy and update.
+                overridden_font = base_font.model_copy() # Pydantic v2 (use .copy(deep=True) for v1)
+                overridden_font.name = specific_font_name
+                return overridden_font
+
+        return base_font # Original expected font
 
     def _get_expected_bullet(self, placeholder_type: Optional[int], level: int = 0) -> Optional[BulletInfo]:
         """

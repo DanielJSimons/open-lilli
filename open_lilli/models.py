@@ -353,6 +353,10 @@ class TemplateStyle(BaseModel):
         default_factory=dict,
         description="Theme font definitions (major, minor fonts)"
     )
+    language_specific_fonts: Dict[str, str] = Field(
+        default_factory=dict,
+        description="Mapping of language codes to specific font names to use for that language."
+    )
     
     def get_font_for_placeholder_type(self, placeholder_type: int) -> Optional[FontInfo]:
         """
@@ -448,6 +452,11 @@ class TemplateStyle(BaseModel):
                 "theme_fonts": {
                     "major": "Calibri",
                     "minor": "Calibri"
+                },
+                "language_specific_fonts": {
+                    "ar": "Arial Unicode MS",
+                    "he": "David Libre",
+                    "fa": "Tahoma"
                 }
             }
         }
