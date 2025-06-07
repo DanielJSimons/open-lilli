@@ -14,6 +14,10 @@ from open_lilli.visual_generator import VisualGenerator
 # Mock for PNG generation methods
 MOCK_PNG_PATH = Path("mock_chart.png")
 
+# Data for new chart types
+AREA_CHART_DATA = {"type": "area", "title": "Monthly Growth", "categories": ["Jan", "Feb", "Mar"], "series": [{"name": "Growth A", "values": [10, 15, 12]}, {"name": "Growth B", "values": [8, 10, 14]}]}
+DOUGHNUT_CHART_DATA = {"type": "doughnut", "title": "Market Share", "labels": ["Alpha", "Beta", "Gamma"], "values": [50, 30, 20]}
+
 
 @pytest.fixture
 def visual_generator_native_enabled(tmp_path):
@@ -138,6 +142,36 @@ class TestVisualGenerator:
         assert chart_path is not None
         assert chart_path.exists()
 
+    def test_generate_area_chart(self):
+        """Test area chart generation."""
+        slide = SlidePlan(index=3, slide_type="chart", title="Area Chart Test", chart_data=AREA_CHART_DATA.copy()) # Use .copy() if data is modified in tested method
+
+        chart_path = self.generator._generate_area_chart(slide)
+
+        assert chart_path is not None
+        assert chart_path.exists()
+        assert "chart_slide_3_area.png" in chart_path.name
+        try:
+            with Image.open(chart_path) as img:
+                assert img.format == "PNG"
+        except Exception as e:
+            pytest.fail(f"Failed to open generated area chart: {e}")
+
+    def test_generate_doughnut_chart(self):
+        """Test doughnut chart generation."""
+        slide = SlidePlan(index=4, slide_type="chart", title="Doughnut Chart Test", chart_data=DOUGHNUT_CHART_DATA.copy()) # Use .copy()
+
+        chart_path = self.generator._generate_doughnut_chart(slide)
+
+        assert chart_path is not None
+        assert chart_path.exists()
+        assert "chart_slide_4_doughnut.png" in chart_path.name
+        try:
+            with Image.open(chart_path) as img:
+                assert img.format == "PNG"
+        except Exception as e:
+            pytest.fail(f"Failed to open generated doughnut chart: {e}")
+
 
 @patch('open_lilli.visual_generator.VisualGenerator._generate_bar_chart', return_value=MOCK_PNG_PATH)
 def test_native_bar_chart_when_enabled(mock_generate_bar, visual_generator_native_enabled):
@@ -212,7 +246,47 @@ def test_invalid_chart_data_type_fallback(mock_generate_chart_png, visual_genera
     # If the new logic in generate_visuals catches this before calling generate_chart, then it won't be called.
     # The current VisualGenerator change has a try-except that logs error, so generate_chart (PNG) won't be called.
     mock_generate_chart_png.assert_not_called()
-    assert "bar" in chart_path.name
+
+# --- Area Chart ---
+@patch('open_lilli.visual_generator.VisualGenerator._generate_area_chart', return_value=Path("mock_area_chart.png"))
+def test_native_area_chart_when_enabled(mock_generate_area_png, visual_generator_native_enabled):
+    vg = visual_generator_native_enabled
+    # Use a simplified version of AREA_CHART_DATA for this test if full data isn't needed for flagging logic
+    slide_area_data = {"type": "area", "categories": ["X1", "X2"], "series": [{"name": "S1", "values": [1,2]}]}
+    slide = SlidePlan(index=0, slide_type="chart", title="Test Area", chart_data=slide_area_data)
+    visuals = vg.generate_visuals([slide])
+    assert visuals[0] == {"native_chart": "pending"}
+    mock_generate_area_png.assert_not_called()
+
+@patch('open_lilli.visual_generator.VisualGenerator._generate_area_chart', return_value=MOCK_PNG_PATH)
+def test_png_area_chart_when_native_disabled(mock_generate_area_png, visual_generator_native_disabled):
+    vg = visual_generator_native_disabled
+    slide_area_data = {"type": "area", "categories": ["X1", "X2"], "series": [{"name": "S1", "values": [1,2]}]}
+    slide = SlidePlan(index=0, slide_type="chart", title="Test Area PNG", chart_data=slide_area_data)
+    visuals = vg.generate_visuals([slide])
+    assert visuals[0] == {"chart": str(MOCK_PNG_PATH)}
+    mock_generate_area_png.assert_called_once()
+
+# --- Doughnut Chart ---
+@patch('open_lilli.visual_generator.VisualGenerator._generate_doughnut_chart', return_value=Path("mock_doughnut_chart.png"))
+def test_native_doughnut_chart_when_enabled(mock_generate_doughnut_png, visual_generator_native_enabled):
+    vg = visual_generator_native_enabled
+    slide_doughnut_data = {"type": "doughnut", "labels": ["L1", "L2"], "values": [1,2]}
+    slide = SlidePlan(index=0, slide_type="chart", title="Test Doughnut", chart_data=slide_doughnut_data)
+    visuals = vg.generate_visuals([slide])
+    assert visuals[0] == {"native_chart": "pending"}
+    mock_generate_doughnut_png.assert_not_called()
+
+@patch('open_lilli.visual_generator.VisualGenerator._generate_doughnut_chart', return_value=MOCK_PNG_PATH)
+def test_png_doughnut_chart_when_native_disabled(mock_generate_doughnut_png, visual_generator_native_disabled):
+    vg = visual_generator_native_disabled
+    slide_doughnut_data = {"type": "doughnut", "labels": ["L1", "L2"], "values": [1,2]}
+    slide = SlidePlan(index=0, slide_type="chart", title="Test Doughnut PNG", chart_data=slide_doughnut_data)
+    visuals = vg.generate_visuals([slide])
+    assert visuals[0] == {"chart": str(MOCK_PNG_PATH)}
+    mock_generate_doughnut_png.assert_called_once()
+
+        assert "bar" in chart_path.name
 
     def test_generate_line_chart(self):
         """Test line chart generation."""
