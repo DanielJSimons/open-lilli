@@ -11,6 +11,7 @@ from typing import Dict, List, Optional, Tuple, Union
 from urllib.parse import urljoin, quote_plus
 import json
 import hashlib
+from PIL import Image # Added for image processing
 
 from .models import AssetLibraryConfig
 
@@ -47,7 +48,10 @@ class CorporateAssetLibrary:
         self,
         query: str,
         asset_type: str = "image",
-        limit: int = 10
+        limit: int = 10,
+        orientation: Optional[str] = None,
+        dominant_color: Optional[str] = None,
+        tags: Optional[List[str]] = None
     ) -> List[Dict]:
         """
         Search for assets in the corporate library.
@@ -56,6 +60,9 @@ class CorporateAssetLibrary:
             query: Search query
             asset_type: Type of asset (image, icon, logo, etc.)
             limit: Maximum number of results
+            orientation: Optional desired orientation (e.g., "landscape", "portrait")
+            dominant_color: Optional dominant color hex code (e.g., "#FF0000") or name
+            tags: Optional list of tags to filter by
             
         Returns:
             List of asset metadata dictionaries
@@ -75,11 +82,26 @@ class CorporateAssetLibrary:
                 'format': 'json'
             }
             
+            if orientation:
+                params['orientation'] = orientation
+            if dominant_color:
+                params['dominant_color'] = dominant_color
+            if tags and isinstance(tags, list) and len(tags) > 0:
+                params['tags'] = ','.join(tags)
+
             # Add asset type filter if specified in config
             if asset_type in self.config.preferred_asset_types:
                 params['preferred'] = 'true'
+
+            search_criteria = [f"q='{query}'", f"type='{asset_type}'", f"limit={limit}"]
+            if orientation:
+                search_criteria.append(f"orientation='{orientation}'")
+            if dominant_color:
+                search_criteria.append(f"dominant_color='{dominant_color}'")
+            if tags:
+                search_criteria.append(f"tags='{params.get('tags')}'") # Use the processed string
             
-            logger.debug(f"Searching corporate assets: {query} ({asset_type})")
+            logger.debug(f"Searching corporate assets with criteria: {', '.join(search_criteria)}")
             
             response = self.session.get(search_endpoint, params=params, timeout=10)
             response.raise_for_status()
@@ -170,15 +192,23 @@ class CorporateAssetLibrary:
         self,
         query: str,
         slide_index: int,
-        fallback_allowed: bool = None
+        fallback_allowed: bool = None,
+        orientation: Optional[str] = None,
+        dominant_color: Optional[str] = None,
+        tags: Optional[List[str]] = None,
+        target_aspect_ratio: Optional[float] = None
     ) -> Optional[Path]:
         """
-        Get a brand-approved image for a slide.
+        Get a brand-approved image for a slide, optionally processing it.
         
         Args:
             query: Image search query
             slide_index: Slide index for filename
             fallback_allowed: Whether to allow external fallback (overrides config)
+            orientation: Optional orientation for search
+            dominant_color: Optional dominant color for search
+            tags: Optional tags for search
+            target_aspect_ratio: Optional aspect ratio to crop the image to
             
         Returns:
             Path to image file or None if not found
@@ -189,14 +219,30 @@ class CorporateAssetLibrary:
                 fallback_allowed = self.config.fallback_to_external
             
             # Search corporate library first
-            assets = self.search_assets(query, asset_type="image", limit=5)
+            assets = self.search_assets(
+                query,
+                asset_type="image",
+                limit=5,
+                orientation=orientation,
+                dominant_color=dominant_color,
+                tags=tags
+            )
             
             if assets:
                 # Try to download first suitable asset
                 for asset in assets:
-                    image_path = self.download_asset(asset)
-                    if image_path:
-                        return image_path
+                    downloaded_image_path = self.download_asset(asset)
+                    if downloaded_image_path:
+                        if target_aspect_ratio is not None:
+                            processed_image_path = self._process_image_with_pillow(
+                                downloaded_image_path, target_aspect_ratio
+                            )
+                            if processed_image_path:
+                                return processed_image_path
+                            else:
+                                logger.warning(f"Image processing failed for {downloaded_image_path}. Returning original downloaded image.")
+                                return downloaded_image_path # Return original if processing fails
+                        return downloaded_image_path # No processing needed
             
             # If strict brand mode, don't use external sources
             if self.config.brand_guidelines_strict:
@@ -205,11 +251,22 @@ class CorporateAssetLibrary:
             
             # Use external fallback if allowed
             if fallback_allowed:
-                logger.info(f"No corporate assets found for '{query}', using external fallback")
-                return self._get_external_fallback_image(query, slide_index)
-            
-            # Create placeholder
-            return self._create_brand_placeholder(query, slide_index)
+                logger.info(f"No corporate assets found for '{query}'. Fallback allowed. VisualGenerator will handle external sourcing.")
+                return None # Signal to VisualGenerator to try its own sources (GenAI, Unsplash)
+
+            # If fallback is not allowed (and not strict mode), or if some other case leads here,
+            # it implies we should not use external sources AND no corporate asset was found.
+            # This might mean creating a placeholder if not already handled by strict mode.
+            # However, strict mode already creates a placeholder. If not strict and no fallback,
+            # it means "no image from corporate, and don't try external".
+            # In this scenario, returning None is appropriate if VisualGenerator's source_image
+            # will then create a generic placeholder.
+            # Or, if the intent is that CAL provides a placeholder if it can't find an asset AND fallback is off,
+            # then a placeholder should be created here.
+            # Given the current VisualGenerator.source_image creates a placeholder as a final resort,
+            # returning None here is fine.
+            logger.info(f"No corporate assets for '{query}', strict mode off, and fallback not allowed by caller. Returning None.")
+            return None # Let VisualGenerator handle the ultimate placeholder if its own sources fail.
             
         except Exception as e:
             logger.error(f"Brand image retrieval failed: {e}")
@@ -585,3 +642,81 @@ class CorporateAssetLibrary:
             score += 0.3
         
         return score
+
+    def _process_image_with_pillow(self, image_path: Path, target_aspect_ratio: float, output_dir: Optional[Path] = None) -> Optional[Path]:
+        """
+        Crops an image to a target aspect ratio using Pillow.
+        Resizing to final dimensions is not handled here.
+
+        Args:
+            image_path: Path to the image file.
+            target_aspect_ratio: The desired aspect ratio (width / height).
+            output_dir: Optional directory to save the processed image. Defaults to self.cache_dir.
+
+        Returns:
+            Path to the processed image, or None if processing failed.
+        """
+        logger.info(f"Processing image {image_path} to target aspect ratio {target_aspect_ratio:.2f}")
+        try:
+            img = Image.open(image_path)
+        except FileNotFoundError:
+            logger.error(f"Image file not found at {image_path}")
+            return None
+        except Exception as e: # Broad exception for Pillow errors (e.g., UnidentifiedImageError)
+            logger.error(f"Error opening image {image_path} with Pillow: {e}")
+            return None
+
+        img_width, img_height = img.size
+        current_aspect_ratio = img_width / img_height
+        tolerance = 0.01 # How close aspect ratios need to be to skip cropping (optional)
+
+        if abs(current_aspect_ratio - target_aspect_ratio) < tolerance:
+            logger.debug(f"Image {image_path} is already close to target aspect ratio. No crop needed.")
+            # If no processing is done, we could return original path or a copy.
+            # For consistency, let's save it to the processed name/location anyway.
+            cropped_img = img
+        elif current_aspect_ratio > target_aspect_ratio:
+            # Image is wider than target, crop width
+            new_width = int(target_aspect_ratio * img_height)
+            left = (img_width - new_width) // 2
+            top = 0
+            right = left + new_width
+            bottom = img_height
+            logger.debug(f"Cropping {image_path} (wider) to box: ({left}, {top}, {right}, {bottom})")
+            cropped_img = img.crop((left, top, right, bottom))
+        else:
+            # Image is taller than target, crop height
+            new_height = int(img_width / target_aspect_ratio)
+            left = 0
+            top = (img_height - new_height) // 2
+            right = img_width
+            bottom = top + new_height
+            logger.debug(f"Cropping {image_path} (taller) to box: ({left}, {top}, {right}, {bottom})")
+            cropped_img = img.crop((left, top, right, bottom))
+
+        # Determine output directory and filename
+        if output_dir is None:
+            output_dir = self.cache_dir
+
+        output_dir.mkdir(parents=True, exist_ok=True) # Ensure output directory exists
+
+        # Create a new filename for the processed image
+        new_filename = f"{image_path.stem}_processed{image_path.suffix}"
+        output_path = output_dir / new_filename
+
+        try:
+            # Save the cropped image, try to retain original format if known and supported
+            save_format = img.format if img.format and img.format.upper() in ["JPEG", "PNG", "GIF"] else 'PNG'
+            if save_format == 'JPEG':
+                 # Ensure image is in RGB mode for JPEG saving if it had alpha
+                if cropped_img.mode in ('RGBA', 'LA'):
+                    cropped_img = cropped_img.convert('RGB')
+                cropped_img.save(output_path, format=save_format, quality=95)
+            else:
+                cropped_img.save(output_path, format=save_format)
+
+            logger.info(f"Saved processed image to {output_path}")
+            return output_path
+        except Exception as e:
+            logger.error(f"Error saving processed image {output_path}: {e}")
+            return None

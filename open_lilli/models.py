@@ -987,6 +987,9 @@ class AssetLibraryConfig(BaseModel):
         description="Preferred asset types"
     )
     max_asset_size_mb: int = Field(default=10, description="Maximum asset size in MB")
+    generative_ai_provider: Optional[str] = Field(None, description="Generative AI provider (e.g., 'dalle3', 'stablediffusion')")
+    generative_ai_api_key: Optional[str] = Field(None, description="API key for the generative AI provider")
+    generative_ai_model: Optional[str] = Field(None, description="Specific model name for the generative AI provider, if applicable")
     
     class Config:
         """Pydantic configuration."""
@@ -998,7 +1001,10 @@ class AssetLibraryConfig(BaseModel):
                 "brand_guidelines_strict": True,
                 "fallback_to_external": False,
                 "preferred_asset_types": ["icon", "photo", "logo"],
-                "max_asset_size_mb": 10
+                "max_asset_size_mb": 10,
+                "generative_ai_provider": "dalle3",
+                "generative_ai_api_key": "your-generative-ai-api-key",
+                "generative_ai_model": "dall-e-3"
             }
         }
 
@@ -1012,6 +1018,7 @@ class VisualExcellenceConfig(BaseModel):
     asset_library: Optional[AssetLibraryConfig] = Field(None, description="Asset library configuration")
     mermaid_to_svg: bool = Field(default=True, description="Convert Mermaid to SVG")
     svg_color_rewriting: bool = Field(default=True, description="Rewrite SVG colors to match template")
+    enable_generative_ai: bool = Field(default=False, description="Enable generative AI for image sourcing")
     
     class Config:
         """Pydantic configuration."""
@@ -1023,6 +1030,7 @@ class VisualExcellenceConfig(BaseModel):
                 "enable_asset_library": False,
                 "asset_library": None,
                 "mermaid_to_svg": True,
-                "svg_color_rewriting": True
+                "svg_color_rewriting": True,
+                "enable_generative_ai": False
             }
         }
