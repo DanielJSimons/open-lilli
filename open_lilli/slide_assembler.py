@@ -71,10 +71,12 @@ class SlideAssembler:
         # Create new presentation from template
         prs = Presentation(str(self.template_parser.template_path))
         
-        # Clear any existing slides
-        while len(prs.slides) > 0:
-            slide_to_remove = prs.slides[0]
-            slide_index = prs.slides._sldIdLst.remove(slide_to_remove.slide_id)
+        # Clear any existing slides from the template
+        # Iterate backwards to safely delete
+        for i in range(len(prs.slides) - 1, -1, -1):
+            r_id = prs.slides._sldIdLst[i].rId
+            prs.part.drop_rel(r_id)
+            del prs.slides._sldIdLst[i]
         
         # Add slides
         for slide_plan in slides:
@@ -292,6 +294,10 @@ class SlideAssembler:
         layout = prs.slide_layouts[layout_index]
         slide = prs.slides.add_slide(layout)
         
+        # Log if content was summarized by LLM
+        if hasattr(slide_plan, 'summarized_by_llm') and slide_plan.summarized_by_llm:
+            logger.info(f"Slide {slide_plan.index} content was summarized by LLM.")
+
         # Add title
         self._add_title(slide, slide_plan.title, language) # Pass language
         
@@ -314,7 +320,14 @@ class SlideAssembler:
         if "image" in slide_visuals:
             self._add_image(slide, slide_visuals["image"])
         
-        # Apply font adjustments if needed
+        # Check for RTL language and skip font adjustment if necessary
+        if language.lower() in RTL_LANGUAGES:
+            logger.info(f"Slide {slide_plan.index} is in RTL language ({language}), skipping font adjustment.")
+            # Clear any existing font adjustment to prevent it from being applied
+            if hasattr(slide_plan, '__dict__') and 'font_adjustment' in slide_plan.__dict__:
+                slide_plan.__dict__['font_adjustment'] = None
+
+        # Apply font adjustments if needed (will be skipped if cleared above)
         self._apply_font_adjustments(slide, slide_plan)
         
         # Add speaker notes

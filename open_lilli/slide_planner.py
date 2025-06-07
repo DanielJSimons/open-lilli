@@ -55,7 +55,14 @@ class SlidePlanner:
         # Initialize content fit analyzer
         self.content_fit_analyzer = ContentFitAnalyzer(content_fit_config, openai_client)
         
-        logger.info(f"SlidePlanner initialized with {len(self.template_parser.layout_map)} available layouts")
+        # Define layout up-shift hierarchy
+        self.layout_upshift_map = {
+            "content": "two_column",  # If 'content' overflows, try 'two_column'
+            # Example: "image_content": "two_column_image_text"
+            # (Actual names depend on your _classify_layout logic and template)
+        }
+
+        logger.info(f"SlidePlanner initialized with {len(self.template_parser.layout_map)} available layouts. Upshift map: {self.layout_upshift_map}")
 
     def _define_layout_priorities(self) -> Dict[str, List[str]]:
         """
@@ -427,34 +434,83 @@ class SlidePlanner:
         
         template_style = getattr(self.template_parser, 'template_style', None)
         
-        for slide in slides:
-            # Analyze content fit for this slide
+        for original_slide_from_input_list in slides:
+            # Initial optimization attempt (summarization T-74, font tuning T-75)
             fit_result = self.content_fit_analyzer.optimize_slide_content(
-                slide, template_style
+                original_slide_from_input_list, template_style
             )
             content_fit_results.append(fit_result)
-            
-            if fit_result.final_action == "split_slide":
-                # Split the slide
-                split_slides = self.content_fit_analyzer.split_slide_content(slide)
-                optimized_slides.extend(split_slides)
-                logger.info(f"Split slide {slide.index} into {len(split_slides)} slides due to content overflow")
+
+            current_slide_plan = fit_result.modified_slide_plan if fit_result.modified_slide_plan else original_slide_from_input_list
+            needs_further_action = fit_result.density_analysis.requires_action or fit_result.final_action == "split_slide"
+
+            if needs_further_action:
+                current_layout_id = current_slide_plan.layout_id
+                current_layout_type = self.template_parser.get_layout_type_by_id(current_layout_id)
+                upshift_attempted_and_succeeded = False
+
+                if current_layout_type and current_layout_type in self.layout_upshift_map:
+                    target_upshift_layout_type = self.layout_upshift_map[current_layout_type]
+                    try:
+                        new_layout_id = self.template_parser.get_layout_index(target_upshift_layout_type)
+                        if new_layout_id is not None and new_layout_id != current_layout_id:
+                            upshifted_slide_plan = current_slide_plan.model_copy()
+                            upshifted_slide_plan.layout_id = new_layout_id
+                            # Clear previous font adjustment as new layout might have different defaults
+                            if hasattr(upshifted_slide_plan, '__dict__') and 'font_adjustment' in upshifted_slide_plan.__dict__:
+                                del upshifted_slide_plan.__dict__['font_adjustment']
+
+                            logger.info(f"Slide {original_slide_from_input_list.index}: Attempting layout up-shift from '{current_layout_type}' (ID: {current_layout_id}) to '{target_upshift_layout_type}' (ID: {new_layout_id}).")
+
+                            new_density_analysis = self.content_fit_analyzer.analyze_slide_density(upshifted_slide_plan, template_style)
+
+                            if not new_density_analysis.requires_action:
+                                optimized_slides.append(upshifted_slide_plan)
+                                logger.info(f"Slide {original_slide_from_input_list.index}: Layout up-shift successful. Content now fits in '{target_upshift_layout_type}'.")
+                                upshift_attempted_and_succeeded = True
+                            else:
+                                # If up-shift didn't help enough, try font adjustment on the new layout if applicable
+                                if new_density_analysis.recommended_action == "adjust_font":
+                                    logger.info(f"Slide {original_slide_from_input_list.index}: Up-shifted layout '{target_upshift_layout_type}' still requires action. Attempting font adjustment.")
+                                    # Assuming current_font_size needs to be determined for the new layout, or use a default
+                                    current_font_size_for_upshifted = getattr(upshifted_slide_plan, 'body_font_size', 18.0)
+                                    font_adj_for_upshifted = self.content_fit_analyzer.recommend_font_adjustment(new_density_analysis, template_style, current_font_size=current_font_size_for_upshifted)
+                                    if font_adj_for_upshifted and font_adj_for_upshifted.safe_bounds:
+                                        if hasattr(upshifted_slide_plan, '__dict__'):
+                                             upshifted_slide_plan.__dict__['font_adjustment'] = font_adj_for_upshifted
+                                        optimized_slides.append(upshifted_slide_plan)
+                                        logger.info(f"Slide {original_slide_from_input_list.index}: Layout up-shifted and font adjusted. Final layout: '{target_upshift_layout_type}'.")
+                                        upshift_attempted_and_succeeded = True
+                                    else:
+                                        logger.info(f"Slide {original_slide_from_input_list.index}: Font adjustment on up-shifted layout not viable. Proceeding to split original/modified slide.")
+                                else:
+                                     logger.info(f"Slide {original_slide_from_input_list.index}: Up-shifted layout '{target_upshift_layout_type}' still requires action ({new_density_analysis.recommended_action}), but not font adjustment. Proceeding to split.")
+                        else:
+                            logger.debug(f"Slide {original_slide_from_input_list.index}: Target upshift layout '{target_upshift_layout_type}' not found or same as current.")
+                    except ValueError as e:
+                        logger.warning(f"Slide {original_slide_from_input_list.index}: Error getting layout index for upshift target '{target_upshift_layout_type}': {e}")
                 
-            elif fit_result.final_action == "adjust_font":
-                # Keep slide but mark for font adjustment
-                optimized_slide = slide.model_copy()
-                if hasattr(optimized_slide, '__dict__'):
-                    optimized_slide.__dict__['font_adjustment'] = fit_result.font_adjustment
-                optimized_slides.append(optimized_slide)
-                logger.debug(f"Slide {slide.index} marked for font adjustment: {fit_result.font_adjustment.recommended_size}pt")
+                if not upshift_attempted_and_succeeded:
+                    logger.info(f"Slide {original_slide_from_input_list.index}: Layout up-shift not attempted or not successful. Proceeding to split.")
+                    # Use current_slide_plan which might have been summarized or had font tuned before upshift attempt
+                    split_slides = self.content_fit_analyzer.split_slide_content(current_slide_plan)
+                    optimized_slides.extend(split_slides)
+                    logger.info(f"Split slide {original_slide_from_input_list.index} into {len(split_slides)} slides.")
+
+            else: # No further action needed after initial T-74/T-75 optimization
+                # current_slide_plan already incorporates T-74/T-75 changes
+                # Font adjustment from fit_result should be applied if present
+                slide_to_add = current_slide_plan.model_copy() # current_slide_plan could be original_slide_from_input_list or fit_result.modified_slide_plan
+                if fit_result.font_adjustment and not hasattr(slide_to_add.__dict__, 'font_adjustment'): # Apply if not already part of modified_slide_plan's creation logic
+                     if hasattr(slide_to_add, '__dict__'):
+                        slide_to_add.__dict__['font_adjustment'] = fit_result.font_adjustment
                 
-            else:
-                # No action needed
-                optimized_slides.append(slide)
-        
-        # Re-index slides after potential splitting
-        for i, slide in enumerate(optimized_slides):
-            slide.index = i
+                optimized_slides.append(slide_to_add)
+                logger.debug(f"Slide {original_slide_from_input_list.index}: Content fits after initial optimization (action: {fit_result.final_action}). Summarized: {slide_to_add.summarized_by_llm}")
+
+        # Re-index slides after potential splitting/rewriting
+        for i, slide_obj in enumerate(optimized_slides): # Renamed slide to slide_obj to avoid conflict
+            slide_obj.index = i # Corrected variable name here
         
         # Apply slide limit after content fit optimization
         if len(optimized_slides) > config.max_slides:
