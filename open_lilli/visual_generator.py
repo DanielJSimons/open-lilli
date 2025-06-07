@@ -13,7 +13,7 @@ import numpy as np
 import requests
 from PIL import Image, ImageDraw, ImageFont
 
-from .models import SlidePlan, NativeChartData, ProcessFlowConfig, VisualExcellenceConfig
+from .models import SlidePlan, NativeChartData, ProcessFlowConfig, VisualExcellenceConfig, ChartType
 from .native_chart_builder import NativeChartBuilder
 from .process_flow_generator import ProcessFlowGenerator
 from .corporate_asset_library import CorporateAssetLibrary
@@ -120,19 +120,39 @@ class VisualGenerator:
             # Generate chart if chart data is present
             if slide.chart_data:
                 try:
-                    # Check if this is native chart data
-                    if isinstance(slide.chart_data, dict) and slide.chart_data.get("native_chart"):
-                        # Flag for native chart - will be handled during slide assembly
+                    chart_type_str = None
+                    is_native_data_obj = isinstance(slide.chart_data, NativeChartData)
+                    is_dict_data = isinstance(slide.chart_data, dict)
+
+                    explicitly_native_pending = False
+                    if is_dict_data:
+                        chart_type_str = slide.chart_data.get("type", "bar").lower()
+                        if slide.chart_data.get("native_chart") == "pending":
+                            explicitly_native_pending = True
+                    elif is_native_data_obj:
+                        chart_type_str = slide.chart_data.chart_type.value.lower()
+
+                    # Determine if we should aim for a native chart
+                    use_native_chart = False
+                    if self.visual_config.enable_native_charts and self.native_chart_builder:
+                        if is_native_data_obj: # Already a NativeChartData object
+                            use_native_chart = True
+                        elif explicitly_native_pending: # Dictionary explicitly asks for native
+                            use_native_chart = True
+                        elif chart_type_str in ["bar", "line", "column"]: # It's a dict and type is bar/line/column
+                            use_native_chart = True
+
+                    if use_native_chart:
                         slide_visuals["native_chart"] = "pending"
-                        logger.info(f"Flagged native chart for slide {slide.index}")
+                        logger.info(f"Flagged native chart for slide {slide.index} (type: {chart_type_str})")
                     else:
-                        # Generate traditional chart image
-                        chart_path = self.generate_chart(slide)
+                        # Generate traditional chart image (PNG)
+                        chart_path = self.generate_chart(slide) # This method expects slide.chart_data to be a dict for PNGs
                         if chart_path:
                             slide_visuals["chart"] = str(chart_path)
-                            logger.info(f"Generated chart for slide {slide.index}: {chart_path}")
+                            logger.info(f"Generated PNG chart for slide {slide.index} (type: {chart_type_str}): {chart_path}")
                 except Exception as e:
-                    logger.error(f"Failed to generate chart for slide {slide.index}: {e}")
+                    logger.error(f"Failed to process chart data for slide {slide.index}: {e}")
             
             # Generate process flow if flow data is present
             if hasattr(slide, 'process_flow') and slide.process_flow:

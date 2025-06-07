@@ -24,6 +24,9 @@ except ImportError:
     PPTX_AVAILABLE = False
     print("⚠️  python-pptx not installed. Demonstrating configuration only.")
 
+# Add os for path operations
+import os
+
 from open_lilli.models import (
     ChartType,
     NativeChartData,
@@ -31,67 +34,171 @@ from open_lilli.models import (
     ProcessFlowStep,
     ProcessFlowType,
     AssetLibraryConfig,
-    VisualExcellenceConfig
+    VisualExcellenceConfig,
+    Outline,
+    SlidePlan
 )
+from open_lilli.visual_generator import VisualGenerator
+from open_lilli.slide_assembler import SlideAssembler
+from open_lilli.template_parser import TemplateParser
+from open_lilli.exceptions import TemplateNotFoundError
+
 
 def demo_native_chart_builder():
-    """Demonstrate T-51: Native PowerPoint chart builder."""
     print("📊 Testing Native PowerPoint Chart Builder (T-51)...")
+
+    if not PPTX_AVAILABLE:
+        print("   ⚠️ python-pptx not installed. Cannot generate actual presentation.")
+        # Print existing config info as before for informational purposes
+        column_chart_config_info = NativeChartData(
+            chart_type=ChartType.COLUMN,
+            title="Revenue Growth by Quarter (Column)",
+            categories=["Q1", "Q2", "Q3", "Q4"],
+            series=[
+                {"name": "Actual", "values": [120, 135, 150, 180]},
+                {"name": "Target", "values": [110, 130, 145, 175]}
+            ],
+            x_axis_title="Quarter", y_axis_title="Revenue ($M)", has_legend=True
+        )
+        print(f"   📈 Defined Column Chart Config (for info only): {column_chart_config_info.title}")
+        return
+
+    # --- Actual Presentation Generation ---
+    print("   Generating presentation with native charts...")
     
-    # Create sample chart configuration
-    chart_config = NativeChartData(
-        chart_type=ChartType.COLUMN,
-        title="Revenue Growth by Quarter",
-        categories=["Q1 2023", "Q2 2023", "Q3 2023", "Q4 2023"],
-        series=[
-            {"name": "Actual Revenue", "values": [120, 135, 150, 180]},
-            {"name": "Target Revenue", "values": [110, 130, 145, 175]}
-        ],
-        x_axis_title="Quarter",
-        y_axis_title="Revenue ($M)",
-        has_legend=True,
-        has_data_labels=True,
-        use_template_colors=True
-    )
-    
-    print(f"   📈 Chart Configuration:")
-    print(f"      Type: {chart_config.chart_type}")
-    print(f"      Title: {chart_config.title}")
-    print(f"      Categories: {chart_config.categories}")
-    print(f"      Series: {len(chart_config.series)} data series")
-    print(f"      Native PowerPoint: Editable chart object")
-    
-    if PPTX_AVAILABLE:
+    # Create output directory if it doesn't exist
+    # Assuming the script is run from the repository root
+    output_dir = Path("examples/demo_outputs")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    demo_pptx_path = output_dir / "native_charts_demo.pptx"
+    dummy_template_path = output_dir / "dummy_template.pptx"
+
+    # Create a dummy template if it doesn't exist
+    if not dummy_template_path.exists():
         try:
-            from open_lilli.native_chart_builder import NativeChartBuilder
+            prs = Presentation()
+            blank_layout_idx = 6
+            if len(prs.slide_layouts) <= blank_layout_idx: # Check if layout index is valid
+                blank_layout_idx = 0 # Fallback to the first layout if specific one not found
             
-            # Test chart builder
-            chart_builder = NativeChartBuilder()
-            
-            # Validate configuration
-            issues = chart_builder.validate_chart_config(chart_config)
-            if issues:
-                print(f"   ❌ Validation issues: {issues}")
+            if not prs.slide_layouts: # Handle case with no layouts at all
+                 print(f"   ⚠️ No slide layouts found in new presentation. Cannot add slide to dummy template.")
+                 dummy_template_path = None # Will cause error if TemplateParser needs a file
             else:
-                print(f"   ✅ Chart configuration valid")
-            
-            # Test legacy conversion
-            legacy_data = {
-                "type": "bar",
-                "title": "Legacy Chart",
-                "categories": ["A", "B", "C"],
-                "values": [10, 20, 30]
-            }
-            
-            native_converted = chart_builder.convert_legacy_chart_data(legacy_data)
-            if native_converted:
-                print(f"   ✅ Legacy chart conversion successful")
-                print(f"      Converted type: {native_converted.chart_type}")
-            
-        except ImportError as e:
-            print(f"   ⚠️  Chart builder requires additional dependencies: {e}")
-    
-    print()
+                 prs.slides.add_slide(prs.slide_layouts[blank_layout_idx])
+                 prs.save(dummy_template_path)
+                 print(f"   📄 Created dummy template: {dummy_template_path}")
+        except Exception as e:
+            print(f"   ⚠️ Could not create dummy template: {e}. Will proceed without it if TemplateParser allows.")
+            dummy_template_path = None
+
+
+    try:
+        template_to_use_str = str(dummy_template_path) if dummy_template_path and dummy_template_path.exists() else None
+
+        if not template_to_use_str:
+             print(f"   ⚠️ No valid dummy template. Attempting to initialize TemplateParser with None.")
+
+        try:
+            # TemplateParser might require a valid path.
+            template_parser = TemplateParser(template_path=template_to_use_str)
+            print(f"   ✅ TemplateParser initialized with: {template_to_use_str if template_to_use_str else 'default settings'}")
+        except TemplateNotFoundError:
+            print(f"   ❌ CRITICAL: TemplateParser failed. A valid template (even a simple one) is required.")
+            print(f"      Ensure '{dummy_template_path}' can be created or provide a valid template path.")
+            return
+        except Exception as e: # Catch any other TemplateParser init errors
+            print(f"   ❌ Error initializing TemplateParser: {e}")
+            return
+
+        # Define chart configurations
+        column_chart_config = NativeChartData(
+            chart_type=ChartType.COLUMN, title="Revenue Growth (Native Column)",
+            categories=["Q1", "Q2", "Q3", "Q4"],
+            series=[
+                {"name": "Product A", "values": [10, 12, 15, 13]},
+                {"name": "Product B", "values": [8, 9, 10, 12]}
+            ],
+            x_axis_title="Quarter", y_axis_title="Units Sold", has_legend=True
+        )
+
+        line_chart_config = NativeChartData(
+            chart_type=ChartType.LINE, title="Stock Price (Native Line)",
+            categories=["Jan", "Feb", "Mar", "Apr"],
+            series=[{"name": "Stock X", "values": [100, 102, 98, 105]}],
+            x_axis_title="Month", y_axis_title="Price ($)", has_data_labels=True
+        )
+
+        bar_chart_config = NativeChartData(
+            chart_type=ChartType.BAR, title="Market Share (Native Bar)",
+            categories=["Competitor A", "Competitor B", "Our Product"],
+            series=[{"name": "Share %", "values": [30, 45, 25]}],
+            x_axis_title="Percentage", y_axis_title="Competitor", use_template_colors=True
+        )
+
+        pie_chart_data_for_png = { # This should become a PNG
+            "type": "pie",
+            "title": "Expense Distribution (Pie - PNG)",
+            "labels": ["R&D", "Marketing", "Sales", "Admin"],
+            "values": [40, 25, 20, 15]
+        }
+
+        title_slide_layout_id = 0
+        content_slide_layout_id = 1
+
+        # Safety check for layout IDs against the loaded presentation by TemplateParser
+        if template_parser.prs:
+            if len(template_parser.prs.slide_layouts) <= title_slide_layout_id:
+                title_slide_layout_id = 0
+            if len(template_parser.prs.slide_layouts) <= content_slide_layout_id:
+                content_slide_layout_id = 0
+        else: # If prs is None in template_parser, default to 0 to avoid errors
+            title_slide_layout_id = 0
+            content_slide_layout_id = 0
+
+
+        slide_plans = [
+            SlidePlan(index=0, slide_type="title", title="Native Charts Demo", layout_id=title_slide_layout_id),
+            SlidePlan(index=1, slide_type="chart", title=column_chart_config.title, chart_data=column_chart_config, layout_id=content_slide_layout_id),
+            SlidePlan(index=2, slide_type="chart", title=line_chart_config.title, chart_data=line_chart_config, layout_id=content_slide_layout_id),
+            SlidePlan(index=3, slide_type="chart", title=bar_chart_config.title, chart_data=bar_chart_config, layout_id=content_slide_layout_id),
+            SlidePlan(index=4, slide_type="chart", title=pie_chart_data_for_png["title"], chart_data=pie_chart_data_for_png, layout_id=content_slide_layout_id)
+        ]
+
+        # Instantiate VisualGenerator
+        vis_config = VisualExcellenceConfig(enable_native_charts=True)
+        # Pass template_parser, as NativeChartBuilder might use it for colors
+        visual_generator = VisualGenerator(output_dir=output_dir, visual_config=vis_config, template_parser=template_parser)
+
+        print(f"   ⚙️  VisualGenerator initialized. Native charts enabled.")
+
+        # Generate visuals metadata
+        visuals_meta = visual_generator.generate_visuals(slide_plans)
+        print(f"   🖼️ Visuals metadata generated: {visuals_meta}")
+
+        # Instantiate SlideAssembler
+        slide_assembler = SlideAssembler(template_parser=template_parser)
+
+        presentation_outline = Outline(title="Native Charts Demo Presentation", author="Lilli Demo")
+
+        slide_assembler.assemble(
+            outline=presentation_outline,
+            slides=slide_plans,
+            visuals=visuals_meta,
+            output_path=demo_pptx_path
+        )
+        print(f"   ✅ Successfully generated presentation: {demo_pptx_path.resolve()}")
+        print(f"      Please open it to manually verify the charts are editable native objects (bar, column, line) and pie is PNG.")
+
+    except ImportError as e:
+        print(f"   ⚠️  Demo requires additional dependencies: {e}")
+    except FileNotFoundError as e:
+        print(f"   ❌ FileNotFoundError: {e}. This often relates to the template path.")
+    except Exception as e:
+        print(f"   ❌ An error occurred during presentation generation: {e}")
+        import traceback
+        traceback.print_exc()
+    print() # Ensure there's a newline before the next demo function starts.
 
 def demo_process_flow_generator():
     """Demonstrate T-52: Mermaid process flow diagram generator."""
