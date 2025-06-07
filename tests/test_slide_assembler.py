@@ -3,6 +3,7 @@
 import tempfile
 from pathlib import Path
 from unittest.mock import Mock, patch
+from typing import List
 
 import pytest
 from pptx import Presentation

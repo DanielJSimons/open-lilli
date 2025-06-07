@@ -145,6 +145,25 @@ class TestReviewer:
         assert feedback[1].slide_index == 2
         assert feedback[1].severity == "low"
 
+    @pytest.mark.asyncio
+    async def test_review_presentation_async_success(self):
+        """Test async review_presentation."""
+        from unittest.mock import AsyncMock
+
+        async_client = AsyncMock()
+        reviewer = Reviewer(async_client)
+        slides = self.create_test_slides()
+
+        mock_response_data = {"feedback": [{"slide_index": 0, "severity": "low", "category": "content", "message": "ok", "suggestion": "none"}]}
+        mock_resp = Mock()
+        mock_resp.choices = [Mock()]
+        mock_resp.choices[0].message.content = json.dumps(mock_response_data)
+        async_client.chat.completions.create.return_value = mock_resp
+
+        feedback = await reviewer.review_presentation_async(slides)
+        assert len(feedback) == 1
+        async_client.chat.completions.create.assert_called_once()
+
     def test_review_individual_slide(self):
         """Test individual slide review."""
         slide = self.create_test_slides()[1]

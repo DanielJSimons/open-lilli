@@ -3,12 +3,13 @@
 import json
 import logging
 import time
+import asyncio
 from typing import Dict, List, Optional
 import yaml # Add this
 from pathlib import Path # Add this
 
 import openai
-from openai import OpenAI
+from openai import OpenAI, AsyncOpenAI
 
 from .models import GenerationConfig, SlidePlan
 from .template_parser import TemplateParser
@@ -39,7 +40,7 @@ class ContentGenerator:
 
     def __init__(
         self, 
-        client: OpenAI, 
+        client: OpenAI | AsyncOpenAI,
         model: str = "gpt-4", 
         temperature: float = 0.3,
         template_parser: Optional[TemplateParser] = None
@@ -105,6 +106,25 @@ class ContentGenerator:
         logger.info(f"Content generation completed for {len(enhanced_slides)} slides")
         return enhanced_slides
 
+    async def generate_content_async(
+        self,
+        slides: List[SlidePlan],
+        config: Optional[GenerationConfig] = None,
+        style_guidance: Optional[str] = None,
+        language: str = "en",
+    ) -> List[SlidePlan]:
+        """Asynchronous version of ``generate_content`` using concurrency."""
+        config = config or GenerationConfig()
+        logger.info(f"Generating content for {len(slides)} slides in language: {language} (async)")
+
+        tasks = [
+            self._generate_slide_content_async(slide, config, style_guidance, language)
+            for slide in slides
+        ]
+        results = await asyncio.gather(*tasks)
+        logger.info(f"Content generation completed for {len(results)} slides")
+        return list(results)
+
     def _generate_slide_content(
         self,
         slide: SlidePlan,
@@ -139,6 +159,29 @@ class ContentGenerator:
             logger.debug(f"Generated content for slide {slide.index}: {enhanced_slide.title}")
             return enhanced_slide
             
+        except Exception as e:
+            logger.error(f"Content generation failed for slide {slide.index}: {e}")
+            return slide
+
+    async def _generate_slide_content_async(
+        self,
+        slide: SlidePlan,
+        config: GenerationConfig,
+        style_guidance: Optional[str],
+        language: str,
+    ) -> SlidePlan:
+        """Asynchronous version of ``_generate_slide_content``."""
+        if slide.slide_type == "title" and slide.title and not slide.bullets:
+            logger.debug(f"Skipping content generation for title slide {slide.index}")
+            return slide
+
+        prompt = self._build_content_prompt(slide, config, style_guidance, language)
+
+        try:
+            response_data = await self._call_openai_with_retries_async(prompt)
+            enhanced_slide = self._apply_generated_content(slide, response_data)
+            logger.debug(f"Generated content for slide {slide.index}: {enhanced_slide.title}")
+            return enhanced_slide
         except Exception as e:
             logger.error(f"Content generation failed for slide {slide.index}: {e}")
             return slide
@@ -297,6 +340,53 @@ Generate enhanced content now:"""
                 logger.warning(f"API error: {e}, waiting {wait_time}s")
                 time.sleep(wait_time)
         
+        raise ValueError("Failed to generate content after all retries")
+
+    async def _call_openai_with_retries_async(self, prompt: str) -> dict:
+        """Asynchronous version of ``_call_openai_with_retries``."""
+        for attempt in range(self.max_retries):
+            try:
+                logger.debug(f"Content generation API call attempt {attempt + 1} (async)")
+                response = await self.client.chat.completions.create(
+                    model=self.model,
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": "You are an expert presentation content writer. Always respond with valid JSON only.",
+                        },
+                        {"role": "user", "content": prompt},
+                    ],
+                    temperature=self.temperature,
+                    max_tokens=1000,
+                    response_format={"type": "json_object"},
+                )
+
+                content = response.choices[0].message.content
+                if not content:
+                    raise ValueError("Empty response from OpenAI")
+
+                try:
+                    return json.loads(content)
+                except json.JSONDecodeError as e:
+                    logger.error(f"Failed to parse JSON response: {e}")
+                    if attempt == self.max_retries - 1:
+                        raise ValueError(f"Invalid JSON response: {e}")
+                    continue
+
+            except openai.RateLimitError:
+                if attempt == self.max_retries - 1:
+                    raise
+                wait_time = self.retry_delay * (2 ** attempt)
+                logger.warning(f"Rate limited, waiting {wait_time}s")
+                await asyncio.sleep(wait_time)
+
+            except openai.APIError as e:
+                if attempt == self.max_retries - 1:
+                    raise
+                wait_time = self.retry_delay * (2 ** attempt)
+                logger.warning(f"API error: {e}, waiting {wait_time}s")
+                await asyncio.sleep(wait_time)
+
         raise ValueError("Failed to generate content after all retries")
 
     def _apply_generated_content(self, slide: SlidePlan, response_data: dict) -> SlidePlan:

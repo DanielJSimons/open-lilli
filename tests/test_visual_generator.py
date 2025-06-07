@@ -212,7 +212,7 @@ def test_invalid_chart_data_type_fallback(mock_generate_chart_png, visual_genera
     # If the new logic in generate_visuals catches this before calling generate_chart, then it won't be called.
     # The current VisualGenerator change has a try-except that logs error, so generate_chart (PNG) won't be called.
     mock_generate_chart_png.assert_not_called()
-        assert "bar" in chart_path.name
+    assert "bar" in chart_path.name
 
     def test_generate_line_chart(self):
         """Test line chart generation."""
