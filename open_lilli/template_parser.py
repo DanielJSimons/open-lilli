@@ -48,6 +48,7 @@ class TemplateParser:
         
         # Analyze the template
         self.layout_map = self._index_layouts()
+        self.reverse_layout_map = {v: k for k, v in self.layout_map.items()} # Added reverse map
         self.palette = self._extract_theme_colors()
         self.template_style = self._extract_template_style()
 
@@ -868,3 +869,15 @@ class TemplateParser:
             BulletInfo object or None if not found
         """
         return self.template_style.get_bullet_style_for_level(placeholder_type, level)
+
+    def get_layout_type_by_id(self, layout_id: int) -> Optional[str]:
+        """
+        Get the semantic layout type name by its ID/index.
+
+        Args:
+            layout_id: The ID/index of the layout.
+
+        Returns:
+            The semantic name of the layout type (e.g., "content", "title") or None if not found.
+        """
+        return self.reverse_layout_map.get(layout_id)

@@ -32,6 +32,9 @@ class SlidePlan(BaseModel):
     layout_id: Optional[int] = Field(
         None, description="Template layout index to use for this slide"
     )
+    summarized_by_llm: bool = Field(
+        default=False, description="Indicates if the slide content was summarized by an LLM"
+    )
 
     class Config:
         """Pydantic configuration."""
@@ -49,7 +52,8 @@ class SlidePlan(BaseModel):
                 "image_query": "business market trends",
                 "chart_data": None,
                 "speaker_notes": "Emphasize the growth opportunity",
-                "layout_id": 1
+                "layout_id": 1,
+                "summarized_by_llm": False
             }
         }
 
@@ -188,7 +192,7 @@ class FontInfo(BaseModel):
     """Font information extracted from template."""
     
     name: str = Field(..., description="Font family name")
-    size: Optional[int] = Field(None, description="Font size in points")
+    size: Optional[float] = Field(None, description="Font size in points")  # Changed to float
     weight: Optional[str] = Field(None, description="Font weight (normal, bold)")
     color: Optional[str] = Field(None, description="Font color in hex format")
     
@@ -198,7 +202,7 @@ class FontInfo(BaseModel):
         json_schema_extra = {
             "example": {
                 "name": "Calibri",
-                "size": 18,
+                "size": 18.0,  # Example updated to float
                 "weight": "normal",
                 "color": "#000000"
             }
@@ -220,7 +224,7 @@ class BulletInfo(BaseModel):
                 "character": "•",
                 "font": {
                     "name": "Calibri",
-                    "size": 14,
+                    "size": 14.0,  # Example updated to float
                     "weight": "normal",
                     "color": "#000000"
                 },
@@ -250,7 +254,7 @@ class PlaceholderStyleInfo(BaseModel):
                 "type_name": "BODY",
                 "default_font": {
                     "name": "Calibri",
-                    "size": 14,
+                    "size": 14.0,  # Example updated to float
                     "weight": "normal",
                     "color": "#000000"
                 },
@@ -259,7 +263,7 @@ class PlaceholderStyleInfo(BaseModel):
                         "character": "•",
                         "font": {
                             "name": "Calibri",
-                            "size": 14,
+                            "size": 14.0,  # Example updated to float
                             "weight": "normal",
                             "color": "#000000"
                         },
@@ -412,7 +416,7 @@ class TemplateStyle(BaseModel):
             "example": {
                 "master_font": {
                     "name": "Calibri",
-                    "size": 12,
+                    "size": 12.0,  # Example updated to float
                     "weight": "normal",
                     "color": "#000000"
                 },
@@ -422,7 +426,7 @@ class TemplateStyle(BaseModel):
                         "type_name": "TITLE",
                         "default_font": {
                             "name": "Calibri",
-                            "size": 24,
+                            "size": 24.0,  # Example updated to float
                             "weight": "bold",
                             "color": "#1F497D"
                         },
@@ -434,7 +438,7 @@ class TemplateStyle(BaseModel):
                         "type_name": "BODY",
                         "default_font": {
                             "name": "Calibri",
-                            "size": 14,
+                            "size": 14.0,  # Example updated to float
                             "weight": "normal",
                             "color": "#000000"
                         },
@@ -443,7 +447,7 @@ class TemplateStyle(BaseModel):
                                 "character": "•",
                                 "font": {
                                     "name": "Calibri",
-                                    "size": 14,
+                                    "size": 14.0,  # Example updated to float
                                     "weight": "normal",
                                     "color": "#000000"
                                 },
@@ -775,9 +779,9 @@ class ContentDensityAnalysis(BaseModel):
 class FontAdjustment(BaseModel):
     """Font size adjustment recommendation."""
     
-    original_size: int = Field(..., description="Original font size in points")
-    recommended_size: int = Field(..., description="Recommended font size in points")
-    adjustment_points: int = Field(..., description="Size change in points (negative = smaller)")
+    original_size: float = Field(..., description="Original font size in points") # Changed to float
+    recommended_size: float = Field(..., description="Recommended font size in points") # Changed to float
+    adjustment_points: float = Field(..., description="Size change in points (negative = smaller)") # Changed to float
     confidence: float = Field(..., ge=0.0, le=1.0, description="Confidence in adjustment")
     reasoning: str = Field(..., description="Explanation for the adjustment")
     safe_bounds: bool = Field(default=True, description="Whether adjustment is within safe bounds")
@@ -792,9 +796,9 @@ class FontAdjustment(BaseModel):
         
         json_schema_extra = {
             "example": {
-                "original_size": 18,
-                "recommended_size": 16,
-                "adjustment_points": -2,
+                "original_size": 18.0, # Example updated to float
+                "recommended_size": 16.0, # Example updated to float
+                "adjustment_points": -2.0, # Example updated to float
                 "confidence": 0.85,
                 "reasoning": "Mild overflow detected, reducing font size within safe bounds",
                 "safe_bounds": True
@@ -811,6 +815,7 @@ class ContentFitResult(BaseModel):
     split_performed: bool = Field(default=False, description="Whether slide was split")
     split_count: int = Field(default=1, description="Number of slides after splitting")
     final_action: str = Field(..., description="Final action taken")
+    modified_slide_plan: Optional[SlidePlan] = Field(None, description="The slide plan after modifications like summarization, if any.")
     
     class Config:
         """Pydantic configuration."""
@@ -829,7 +834,8 @@ class ContentFitResult(BaseModel):
                 "font_adjustment": None,
                 "split_performed": True,
                 "split_count": 2,
-                "final_action": "split_slide"
+                "final_action": "split_slide",
+                "modified_slide_plan": None # Or an example SlidePlan if applicable
             }
         }
 
@@ -842,8 +848,11 @@ class ContentFitConfig(BaseModel):
     min_font_size: int = Field(default=12, description="Minimum allowed font size")
     max_font_size: int = Field(default=24, description="Maximum allowed font size")
     font_adjustment_limit: int = Field(default=3, description="Maximum font size adjustment in points")
-    split_threshold: float = Field(default=1.3, description="Density ratio threshold for splitting")
+    split_threshold: float = Field(default=1.5, description="Density ratio threshold for splitting")  # Adjusted default
     font_tune_threshold: float = Field(default=1.1, description="Density ratio threshold for font tuning")
+    rewrite_threshold: float = Field(default=1.3, description="Density ratio threshold for attempting content rewrite")
+    proportional_shrink_factor: float = Field(default=0.9, description="Factor by which to shrink font size proportionally (e.g., 0.9 for a 10% reduction attempt).")
+    max_proportional_shrink_cap_factor: float = Field(default=0.85, description="Maximum shrink allowed, as a factor of the template's original body font size (e.g., 0.85 for 85% of original).")
     
     class Config:
         """Pydantic configuration."""
@@ -855,8 +864,11 @@ class ContentFitConfig(BaseModel):
                 "min_font_size": 12,
                 "max_font_size": 24,
                 "font_adjustment_limit": 3,
-                "split_threshold": 1.3,
-                "font_tune_threshold": 1.1
+                "split_threshold": 1.5,
+                "font_tune_threshold": 1.1,
+                "rewrite_threshold": 1.3,
+                "proportional_shrink_factor": 0.9,
+                "max_proportional_shrink_cap_factor": 0.85
             }
         }
 
