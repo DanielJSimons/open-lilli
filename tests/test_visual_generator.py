@@ -2,13 +2,34 @@
 
 import tempfile
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, patch, MagicMock, call # ensure 'call' is imported
 
 import pytest
 from PIL import Image
 
-from open_lilli.models import SlidePlan
+from open_lilli.models import SlidePlan, VisualExcellenceConfig, NativeChartData, ChartType # Add NativeChartData, ChartType
 from open_lilli.visual_generator import VisualGenerator
+
+
+# Mock for PNG generation methods
+MOCK_PNG_PATH = Path("mock_chart.png")
+
+
+@pytest.fixture
+def visual_generator_native_enabled(tmp_path):
+    config = VisualExcellenceConfig(enable_native_charts=True, enable_process_flows=False, enable_asset_library=False)
+    # Mock dependencies if NativeChartBuilder is instantiated within VisualGenerator's init
+    with patch('open_lilli.visual_generator.NativeChartBuilder') as MockNativeChartBuilder:
+        vg = VisualGenerator(output_dir=tmp_path, visual_config=config)
+        vg.native_chart_builder = MockNativeChartBuilder() # Ensure it has the mock
+        return vg
+
+@pytest.fixture
+def visual_generator_native_disabled(tmp_path):
+    config = VisualExcellenceConfig(enable_native_charts=False, enable_process_flows=False, enable_asset_library=False)
+    vg = VisualGenerator(output_dir=tmp_path, visual_config=config)
+    # No need to mock NativeChartBuilder if it's not expected to be used or checked here
+    return vg
 
 
 class TestVisualGenerator:
@@ -116,6 +137,81 @@ class TestVisualGenerator:
         
         assert chart_path is not None
         assert chart_path.exists()
+
+
+@patch('open_lilli.visual_generator.VisualGenerator._generate_bar_chart', return_value=MOCK_PNG_PATH)
+def test_native_bar_chart_when_enabled(mock_generate_bar, visual_generator_native_enabled):
+    vg = visual_generator_native_enabled
+    slide = SlidePlan(index=0, slide_type="chart", title="Test", chart_data={"type": "bar", "categories": ["A"], "values": [1]})
+    visuals = vg.generate_visuals([slide])
+    assert visuals[0] == {"native_chart": "pending"}
+    mock_generate_bar.assert_not_called()
+
+@patch('open_lilli.visual_generator.VisualGenerator._generate_line_chart', return_value=MOCK_PNG_PATH)
+def test_native_line_chart_when_enabled(mock_generate_line, visual_generator_native_enabled):
+    vg = visual_generator_native_enabled
+    slide = SlidePlan(index=0, slide_type="chart", title="Test", chart_data={"type": "line", "x": [1], "y": [1]})
+    visuals = vg.generate_visuals([slide])
+    assert visuals[0] == {"native_chart": "pending"}
+    mock_generate_line.assert_not_called()
+
+@patch('open_lilli.visual_generator.VisualGenerator._generate_bar_chart', return_value=MOCK_PNG_PATH) # Assuming column uses _generate_bar_chart or similar
+def test_native_column_chart_when_enabled(mock_generate_bar, visual_generator_native_enabled): # RENAMED from mock_generate_column
+    vg = visual_generator_native_enabled
+    slide = SlidePlan(index=0, slide_type="chart", title="Test", chart_data={"type": "column", "categories": ["A"], "values": [1]})
+    visuals = vg.generate_visuals([slide])
+    assert visuals[0] == {"native_chart": "pending"}
+    mock_generate_bar.assert_not_called() # Or assert specific type if _generate_column_chart exists
+
+@patch('open_lilli.visual_generator.VisualGenerator._generate_pie_chart', return_value=MOCK_PNG_PATH)
+def test_png_fallback_for_other_types_when_native_enabled(mock_generate_pie, visual_generator_native_enabled):
+    vg = visual_generator_native_enabled
+    slide = SlidePlan(index=0, slide_type="chart", title="Test", chart_data={"type": "pie", "labels": ["L"], "values": [1]})
+    visuals = vg.generate_visuals([slide])
+    assert visuals[0] == {"chart": str(MOCK_PNG_PATH)}
+    mock_generate_pie.assert_called_once()
+
+@patch('open_lilli.visual_generator.VisualGenerator._generate_bar_chart', return_value=MOCK_PNG_PATH)
+def test_png_fallback_when_native_disabled(mock_generate_bar, visual_generator_native_disabled):
+    vg = visual_generator_native_disabled
+    slide = SlidePlan(index=0, slide_type="chart", title="Test", chart_data={"type": "bar", "categories": ["A"], "values": [1]})
+    visuals = vg.generate_visuals([slide])
+    assert visuals[0] == {"chart": str(MOCK_PNG_PATH)}
+    mock_generate_bar.assert_called_once()
+
+@patch('open_lilli.visual_generator.VisualGenerator._generate_pie_chart', return_value=MOCK_PNG_PATH)
+def test_explicit_native_request_honored(mock_generate_pie, visual_generator_native_enabled):
+    vg = visual_generator_native_enabled
+    slide = SlidePlan(index=0, slide_type="chart", title="Test", chart_data={"type": "pie", "native_chart": "pending", "labels": ["L"], "values": [1]})
+    visuals = vg.generate_visuals([slide])
+    assert visuals[0] == {"native_chart": "pending"}
+    mock_generate_pie.assert_not_called()
+
+@patch('open_lilli.visual_generator.VisualGenerator._generate_bar_chart', return_value=MOCK_PNG_PATH) # Assuming NativeChartData might be bar
+def test_native_chart_data_instance_handled(mock_generate_bar, visual_generator_native_enabled):
+    vg = visual_generator_native_enabled
+    chart_data_obj = NativeChartData(chart_type=ChartType.BAR, title="Native Obj", categories=["A"], series=[{"name": "S1", "values": [1]}])
+    slide = SlidePlan(index=0, slide_type="chart", title="Test", chart_data=chart_data_obj)
+    visuals = vg.generate_visuals([slide])
+    assert visuals[0] == {"native_chart": "pending"}
+    mock_generate_bar.assert_not_called()
+
+# Test for when chart_data is not a dict or NativeChartData (should fallback or log error, ensure it doesn't crash)
+@patch('open_lilli.visual_generator.VisualGenerator.generate_chart', return_value=MOCK_PNG_PATH) # Mock the generic generate_chart
+def test_invalid_chart_data_type_fallback(mock_generate_chart_png, visual_generator_native_enabled):
+    vg = visual_generator_native_enabled
+    slide = SlidePlan(index=0, slide_type="chart", title="Test", chart_data="this is not a dict") # Invalid chart_data
+    # This call should not raise an unhandled exception due to type error
+    # The implementation in VisualGenerator's generate_visuals logs an error and continues.
+    # We expect no visuals to be generated for the chart part or a fallback to PNG if generate_chart can handle it.
+    # Based on current VisualGenerator, an error is logged, and no chart visual is added to 'visuals'.
+    visuals = vg.generate_visuals([slide])
+    assert 0 not in visuals or ("chart" not in visuals[0] and "native_chart" not in visuals[0])
+    # Depending on implementation, generate_chart might be called or not.
+    # If it's called, it should handle the non-dict data gracefully.
+    # If the new logic in generate_visuals catches this before calling generate_chart, then it won't be called.
+    # The current VisualGenerator change has a try-except that logs error, so generate_chart (PNG) won't be called.
+    mock_generate_chart_png.assert_not_called()
         assert "bar" in chart_path.name
 
     def test_generate_line_chart(self):
