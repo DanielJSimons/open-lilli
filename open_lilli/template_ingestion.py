@@ -3,7 +3,7 @@
 import logging
 import time
 from pathlib import Path
-from typing import List, Optional, Set, Tuple
+from typing import List, Optional, Set, Tuple, Dict
 
 from openai import OpenAI
 

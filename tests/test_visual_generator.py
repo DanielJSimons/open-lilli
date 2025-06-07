@@ -247,9 +247,6 @@ def test_invalid_chart_data_type_fallback(mock_generate_chart_png, visual_genera
     # The current VisualGenerator change has a try-except that logs error, so generate_chart (PNG) won't be called.
     mock_generate_chart_png.assert_not_called()
 
-
-# Standalone tests for native flagging and PNG fallbacks for new chart types
-
 # --- Area Chart ---
 @patch('open_lilli.visual_generator.VisualGenerator._generate_area_chart', return_value=Path("mock_area_chart.png"))
 def test_native_area_chart_when_enabled(mock_generate_area_png, visual_generator_native_enabled):

@@ -261,3 +261,26 @@ class TestOutlineGenerator:
         prompt = call_args[1]["messages"][1]["content"]
         assert "Make it better" in prompt
         assert "Initial Title" in prompt
+
+    @pytest.mark.asyncio
+    async def test_generate_outline_async(self):
+        """Test asynchronous outline generation."""
+        from unittest.mock import AsyncMock
+
+        async_client = AsyncMock()
+        generator = OutlineGenerator(async_client)
+
+        mock_response_data = {
+            "language": "en",
+            "title": "Async Presentation",
+            "slides": [{"index": 0, "slide_type": "title", "title": "Hello"}],
+        }
+        mock_resp = Mock()
+        mock_resp.choices = [Mock()]
+        mock_resp.choices[0].message.content = json.dumps(mock_response_data)
+        async_client.chat.completions.create.return_value = mock_resp
+
+        outline = await generator.generate_outline_async("test")
+
+        assert outline.title == "Async Presentation"
+        async_client.chat.completions.create.assert_called_once()
