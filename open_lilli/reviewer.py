@@ -4,11 +4,12 @@ import json
 import logging
 import re
 import time
+import asyncio
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
 
 import openai
-from openai import OpenAI
+from openai import OpenAI, AsyncOpenAI
 from pydantic import ValidationError
 
 from .models import QualityGateResult, QualityGates, ReviewFeedback, SlidePlan, TemplateStyle, PlaceholderStyleInfo, FontInfo
@@ -170,7 +171,7 @@ def calculate_contrast_ratio(hex_color1: str, hex_color2: str) -> float:
 class Reviewer:
     """AI-powered presentation reviewer for quality feedback and iterative refinement."""
 
-    def __init__(self, client: OpenAI, model: str = "gpt-4", temperature: float = 0.2, template_style: Optional[TemplateStyle] = None):
+    def __init__(self, client: OpenAI | AsyncOpenAI, model: str = "gpt-4", temperature: float = 0.2, template_style: Optional[TemplateStyle] = None):
         """
         Initialize the reviewer.
         
@@ -252,6 +253,49 @@ class Reviewer:
                     violations=["Review failed due to an error"],
                     recommendations=["Please retry the review"],
                     metrics={}
+                )
+                return empty_feedback, failing_result
+            return []
+
+    async def review_presentation_async(
+        self,
+        slides: List[SlidePlan],
+        presentation_context: Optional[str] = None,
+        review_criteria: Optional[Dict[str, any]] = None,
+        include_quality_gates: bool = False,
+        quality_gates: Optional[QualityGates] = None,
+    ) -> Union[List[ReviewFeedback], Tuple[List[ReviewFeedback], QualityGateResult]]:
+        """Asynchronous version of ``review_presentation``."""
+        logger.info(f"Reviewing presentation with {len(slides)} slides (async)")
+
+        review_criteria = review_criteria or self._get_default_criteria()
+        presentation_summary = self._create_presentation_summary(slides, presentation_context)
+        prompt = self._build_review_prompt(presentation_summary, review_criteria)
+
+        try:
+            feedback_data = await self._call_openai_with_retries_async(prompt)
+            feedback_list = self._parse_feedback_response(feedback_data)
+            logger.info(f"Generated {len(feedback_list)} feedback items")
+            if include_quality_gates:
+                quality_result = self.evaluate_quality_gates(slides, feedback_list, quality_gates)
+                return feedback_list, quality_result
+            return feedback_list
+        except Exception as e:
+            logger.error(f"Presentation review failed: {e}")
+            if include_quality_gates:
+                empty_feedback = []
+                default_gates = quality_gates or QualityGates()
+                failing_result = QualityGateResult(
+                    status="needs_fix",
+                    gate_results={
+                        "bullet_count": False,
+                        "readability": False,
+                        "style_errors": False,
+                        "overall_score": False,
+                    },
+                    violations=["Review failed due to an error"],
+                    recommendations=["Please retry the review"],
+                    metrics={},
                 )
                 return empty_feedback, failing_result
             return []
@@ -743,6 +787,53 @@ Return a JSON array of specific feedback items for this slide. Include 2-4 actio
                 logger.warning(f"API error: {e}, waiting {wait_time}s")
                 time.sleep(wait_time)
         
+        raise ValueError("Failed to get review after all retries")
+
+    async def _call_openai_with_retries_async(self, prompt: str) -> dict:
+        """Asynchronous version of ``_call_openai_with_retries``."""
+        for attempt in range(self.max_retries):
+            try:
+                logger.debug(f"Review API call attempt {attempt + 1} (async)")
+                response = await self.client.chat.completions.create(
+                    model=self.model,
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": "You are an expert presentation consultant. Always respond with valid JSON only.",
+                        },
+                        {"role": "user", "content": prompt},
+                    ],
+                    temperature=self.temperature,
+                    max_tokens=2000,
+                    response_format={"type": "json_object"},
+                )
+
+                content = response.choices[0].message.content
+                if not content:
+                    raise ValueError("Empty response from OpenAI")
+
+                try:
+                    return json.loads(content)
+                except json.JSONDecodeError as e:
+                    logger.error(f"Failed to parse JSON response: {e}")
+                    if attempt == self.max_retries - 1:
+                        raise ValueError(f"Invalid JSON response: {e}")
+                    continue
+
+            except openai.RateLimitError:
+                if attempt == self.max_retries - 1:
+                    raise
+                wait_time = self.retry_delay * (2 ** attempt)
+                logger.warning(f"Rate limited, waiting {wait_time}s")
+                await asyncio.sleep(wait_time)
+
+            except openai.APIError as e:
+                if attempt == self.max_retries - 1:
+                    raise
+                wait_time = self.retry_delay * (2 ** attempt)
+                logger.warning(f"API error: {e}, waiting {wait_time}s")
+                await asyncio.sleep(wait_time)
+
         raise ValueError("Failed to get review after all retries")
 
     def _parse_feedback_response(self, response_data: dict) -> List[ReviewFeedback]:

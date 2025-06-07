@@ -3,10 +3,11 @@
 import json
 import logging
 import time
+import asyncio
 from typing import Optional
 
 import openai
-from openai import OpenAI
+from openai import OpenAI, AsyncOpenAI
 from pydantic import ValidationError
 
 from .models import GenerationConfig, Outline, SlidePlan
@@ -17,10 +18,10 @@ logger = logging.getLogger(__name__)
 class OutlineGenerator:
     """Generates structured presentation outlines using OpenAI models."""
 
-    def __init__(self, client: OpenAI, model: str = "gpt-4", temperature: float = 0.3):
+    def __init__(self, client: OpenAI | AsyncOpenAI, model: str = "gpt-4", temperature: float = 0.3):
         """
         Initialize the outline generator.
-        
+
         Args:
             client: OpenAI client instance
             model: Model name to use
@@ -33,8 +34,8 @@ class OutlineGenerator:
         self.retry_delay = 1.0
 
     def generate_outline(
-        self, 
-        text: str, 
+        self,
+        text: str,
         config: Optional[GenerationConfig] = None,
         title: Optional[str] = None,
         language: str = "en"
@@ -75,6 +76,35 @@ class OutlineGenerator:
             logger.info(f"Successfully generated outline with {outline.slide_count} slides")
             return outline
             
+        except ValidationError as e:
+            logger.error(f"Failed to validate outline structure: {e}")
+            raise ValueError(f"Generated outline is invalid: {e}")
+
+    async def generate_outline_async(
+        self,
+        text: str,
+        config: Optional[GenerationConfig] = None,
+        title: Optional[str] = None,
+        language: str = "en"
+    ) -> Outline:
+        """Asynchronous version of ``generate_outline``."""
+        if not text or not text.strip():
+            raise ValueError("Input text cannot be empty")
+
+        config = config or GenerationConfig()
+
+        logger.info(
+            f"Generating outline for {len(text)} characters of text (async)"
+        )
+        prompt = self._build_outline_prompt(text, config, title, language)
+        outline_data = await self._call_openai_with_retries_async(prompt)
+
+        try:
+            outline = Outline(**outline_data)
+            logger.info(
+                f"Successfully generated outline with {outline.slide_count} slides"
+            )
+            return outline
         except ValidationError as e:
             logger.error(f"Failed to validate outline structure: {e}")
             raise ValueError(f"Generated outline is invalid: {e}")
@@ -223,6 +253,55 @@ Generate the outline now:"""
                 logger.warning(f"API error: {e}, waiting {wait_time}s before retry")
                 time.sleep(wait_time)
         
+        raise ValueError("Failed to generate outline after all retries")
+
+    async def _call_openai_with_retries_async(self, prompt: str) -> dict:
+        """Asynchronous version of ``_call_openai_with_retries``."""
+        for attempt in range(self.max_retries):
+            try:
+                logger.debug(f"OpenAI API call attempt {attempt + 1} (async)")
+                response = await self.client.chat.completions.create(
+                    model=self.model,
+                    messages=[
+                        {
+                            "role": "system",
+                            "content": "You are an expert presentation designer. Always respond with valid JSON only.",
+                        },
+                        {"role": "user", "content": prompt},
+                    ],
+                    temperature=self.temperature,
+                    max_tokens=4000,
+                    response_format={"type": "json_object"},
+                )
+
+                content = response.choices[0].message.content
+                if not content:
+                    raise ValueError("Empty response from OpenAI")
+
+                try:
+                    outline_data = json.loads(content)
+                    self._validate_outline_structure(outline_data)
+                    return outline_data
+                except json.JSONDecodeError as e:
+                    logger.error(f"Failed to parse JSON response: {e}")
+                    if attempt == self.max_retries - 1:
+                        raise ValueError(f"Invalid JSON response from OpenAI: {e}")
+                    continue
+
+            except openai.RateLimitError:
+                if attempt == self.max_retries - 1:
+                    raise
+                wait_time = self.retry_delay * (2 ** attempt)
+                logger.warning(f"Rate limited, waiting {wait_time}s before retry")
+                await asyncio.sleep(wait_time)
+
+            except openai.APIError as e:
+                if attempt == self.max_retries - 1:
+                    raise
+                wait_time = self.retry_delay * (2 ** attempt)
+                logger.warning(f"API error: {e}, waiting {wait_time}s before retry")
+                await asyncio.sleep(wait_time)
+
         raise ValueError("Failed to generate outline after all retries")
 
     def _validate_outline_structure(self, data: dict) -> None:

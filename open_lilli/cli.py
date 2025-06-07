@@ -2,12 +2,13 @@
 
 import os
 import sys
+import asyncio
 from pathlib import Path
 from typing import Optional
 
 import click
 from dotenv import load_dotenv
-from openai import OpenAI
+from openai import OpenAI, AsyncOpenAI
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn
 from rich.table import Table
@@ -123,6 +124,12 @@ def cli():
     help="OpenAI model to use"
 )
 @click.option(
+    "--async",
+    "async_mode",
+    is_flag=True,
+    help="Use asyncio for slide generation"
+)
+@click.option(
     "--verbose", "-v",
     is_flag=True,
     help="Enable verbose output"
@@ -142,6 +149,7 @@ def generate(
     max_iterations: int,
     assets_dir: Path,
     model: str,
+    async_mode: bool,
     verbose: bool
 ):
     """Generate a PowerPoint presentation from input content."""
@@ -160,7 +168,7 @@ def generate(
     
     # Initialize OpenAI client
     try:
-        openai_client = OpenAI(api_key=api_key)
+        openai_client = AsyncOpenAI(api_key=api_key) if async_mode else OpenAI(api_key=api_key)
     except Exception as e:
         console.print(f"[red]Error initializing OpenAI client: {e}[/red]")
         sys.exit(1)
@@ -212,9 +220,16 @@ def generate(
             # Step 3: Generate outline
             task = progress.add_task("🧠 Generating outline with AI...", total=None)
             outline_generator = OutlineGenerator(openai_client, model=model)
-            outline = outline_generator.generate_outline(
-                raw_text, config=config, language=lang
-            )
+            if async_mode:
+                outline = asyncio.run(
+                    outline_generator.generate_outline_async(
+                        raw_text, config=config, language=lang
+                    )
+                )
+            else:
+                outline = outline_generator.generate_outline(
+                    raw_text, config=config, language=lang
+                )
             console.print(f"✅ Generated outline with {outline.slide_count} slides")
             progress.remove_task(task)
             
@@ -249,9 +264,16 @@ def generate(
             # Step 5: Generate content
             task = progress.add_task("✍️ Generating slide content...", total=None)
             content_generator = ContentGenerator(openai_client, model=model, template_parser=template_parser)
-            enhanced_slides = content_generator.generate_content(
-                planned_slides, config, outline.style_guidance, lang
-            )
+            if async_mode:
+                enhanced_slides = asyncio.run(
+                    content_generator.generate_content_async(
+                        planned_slides, config, outline.style_guidance, lang
+                    )
+                )
+            else:
+                enhanced_slides = content_generator.generate_content(
+                    planned_slides, config, outline.style_guidance, lang
+                )
             content_stats = content_generator.get_content_statistics(enhanced_slides)
             console.print(f"✅ Generated content for {len(enhanced_slides)} slides")
             progress.remove_task(task)
@@ -283,10 +305,18 @@ def generate(
                         iteration_count += 1
                         
                         # Review with quality gates
-                        feedback, quality_result = reviewer.review_presentation(
-                            current_slides, 
-                            include_quality_gates=True
-                        )
+                        if async_mode:
+                            feedback, quality_result = asyncio.run(
+                                reviewer.review_presentation_async(
+                                    current_slides,
+                                    include_quality_gates=True
+                                )
+                            )
+                        else:
+                            feedback, quality_result = reviewer.review_presentation(
+                                current_slides,
+                                include_quality_gates=True
+                            )
                         
                         review_summary = reviewer.get_review_summary(feedback)
                         console.print(f"✅ Iteration {iteration_count} - Score: {review_summary['overall_score']}/10, "
@@ -353,7 +383,12 @@ def generate(
                 
                 else:
                     # Regular review mode
-                    feedback = reviewer.review_presentation(enhanced_slides)
+                    if async_mode:
+                        feedback = asyncio.run(
+                            reviewer.review_presentation_async(enhanced_slides)
+                        )
+                    else:
+                        feedback = reviewer.review_presentation(enhanced_slides)
                     review_summary = reviewer.get_review_summary(feedback)
                     console.print(f"✅ Review complete - Score: {review_summary['overall_score']}/10")
                 

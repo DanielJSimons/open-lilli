@@ -151,6 +151,40 @@ class TestCLI:
             assert "Generation Complete" in result.output
 
     @patch.dict("os.environ", {"OPENAI_API_KEY": "test_key"})
+    @patch("open_lilli.cli.AsyncOpenAI")
+    def test_generate_async_flag(self, mock_async_openai):
+        """Test generate command with --async flag."""
+        mock_client = Mock()
+        mock_async_openai.return_value = mock_client
+
+        with patch("open_lilli.cli.OutlineGenerator") as mock_outline_gen, \
+             patch("open_lilli.cli.SlidePlanner"), \
+             patch("open_lilli.cli.ContentGenerator") as mock_content_gen, \
+             patch("open_lilli.cli.VisualGenerator"), \
+             patch("open_lilli.cli.Reviewer") as mock_reviewer, \
+             patch("open_lilli.cli.SlideAssembler") as mock_assembler:
+
+            mock_outline_gen.return_value.generate_outline_async.return_value = Mock(slide_count=1, style_guidance="sg")
+            mock_content_gen.return_value.generate_content_async.return_value = [Mock()]
+            mock_content_gen.return_value.get_content_statistics.return_value = {"total_bullets":1, "total_words":1}
+            mock_reviewer.return_value.review_presentation_async.return_value = []
+            output_path = self.temp_dir / "async.pptx"
+            mock_assembler.return_value.validate_slides_before_assembly.return_value = []
+            mock_assembler.return_value.assemble.return_value = output_path
+            mock_assembler.return_value.get_assembly_statistics.return_value = {"total_slides":1}
+
+            result = self.runner.invoke(cli, [
+                "generate",
+                "--template", str(self.test_template),
+                "--input", str(self.test_content),
+                "--output", str(output_path),
+                "--async"
+            ])
+
+            assert result.exit_code == 0
+            assert mock_outline_gen.return_value.generate_outline_async.called
+
+    @patch.dict("os.environ", {"OPENAI_API_KEY": "test_key"})
     @patch("open_lilli.cli.OpenAI")
     def test_generate_openai_error(self, mock_openai):
         """Test generate command with OpenAI initialization error."""
