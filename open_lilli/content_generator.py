@@ -173,15 +173,22 @@ class ContentGenerator:
         
         # Determine effective tone
         effective_tone = config.tone  # Start with default tone from config
-        # self.tone_profiles is from __init__
-        if language in self.tone_profiles:
-            profile_tone = self.tone_profiles[language]
-            # Ensure profile tone is not empty and is a string before overriding
+
+        # If a tone profile is explicitly provided in config, use it
+        profile_lang = config.tone_profile or language
+        if profile_lang in self.tone_profiles:
+            profile_tone = self.tone_profiles[profile_lang]
+            # Ensure profile tone is valid before overriding
             if profile_tone and isinstance(profile_tone, str):
                 effective_tone = profile_tone
-                logger.info(f"Using language-specific tone for '{language}': {effective_tone}")
+                logger.info(
+                    f"Using tone profile '{profile_lang}': {effective_tone}"
+                )
             else:
-                logger.warning(f"Empty or invalid tone profile for language '{language}' (value: {profile_tone}), using default from config: {config.tone}")
+                logger.warning(
+                    f"Empty or invalid tone profile for '{profile_lang}' "
+                    f"(value: {profile_tone}), using default from config: {config.tone}"
+                )
 
         style_context += f"Tone: {effective_tone}\n"
         style_context += f"Complexity level: {config.complexity_level}\n"

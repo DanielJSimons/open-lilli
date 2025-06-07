@@ -38,9 +38,13 @@ ai-ppt generate \
   --template templates/corporate.pptx \
   --input content/script.txt \
   --lang en \
+  --tone-profile de \
   --slides 10 \
   --output presentation.pptx
 ```
+
+Tone profiles are defined in `open_lilli/config/tone_profiles.yaml`. Add new
+language codes there to customize styles.
 
 ## Development
 

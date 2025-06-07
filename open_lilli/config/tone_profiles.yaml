@@ -1,5 +1,11 @@
-ja: "polite formal"
-de: "concise direct"
-es: "professional and clear"
-fr: "elegant and professional"
-zh: "respectful and clear"
+# Tone profiles for different languages.
+# Each entry maps an ISO 639-1 language code to the tone description
+# used when generating content.
+# Extend this file by adding new mappings, e.g.:
+# it: "warm and persuasive"
+
+ja: "polite formal"       # Japanese business style
+de: "concise direct"      # German direct tone
+es: "professional and clear"  # Spanish corporate style
+fr: "elegant and professional"  # French professional tone
+zh: "respectful and clear"  # Chinese professional style

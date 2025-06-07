@@ -191,11 +191,12 @@ class TestCLI:
             result = self.runner.invoke(cli, [
                 "generate", "--help"
             ])
-            
+
             assert "--template" in result.output
             assert "--lang" in result.output
             assert "--slides" in result.output
             assert "--tone" in result.output
+            assert "--tone-profile" in result.output
             assert "--complexity" in result.output
             assert "--no-images" in result.output
             assert "--no-charts" in result.output

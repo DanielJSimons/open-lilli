@@ -3,7 +3,7 @@
 import logging
 import time
 from pathlib import Path
-from typing import List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 from openai import OpenAI
 
@@ -244,7 +244,7 @@ class TemplateIngestionPipeline:
     def validate_corpus_quality(
         self, 
         min_slides_per_layout: int = 10
-    ) -> Dict[str, any]:
+    ) -> Dict[str, Any]:
         """
         Validate the quality of the ingested corpus.
         
@@ -294,7 +294,7 @@ class TemplateIngestionPipeline:
         
         return validation_result
 
-    def get_corpus_summary(self) -> Dict[str, any]:
+    def get_corpus_summary(self) -> Dict[str, Any]:
         """
         Get a summary of the current training corpus.
         

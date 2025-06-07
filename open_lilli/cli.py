@@ -80,6 +80,11 @@ def cli():
     help="Tone for content generation"
 )
 @click.option(
+    "--tone-profile",
+    default=None,
+    help="Language code for tone profile to apply"
+)
+@click.option(
     "--complexity",
     default="intermediate",
     type=click.Choice(["basic", "intermediate", "advanced"]),
@@ -134,6 +139,7 @@ def generate(
     lang: str,
     slides: int,
     tone: str,
+    tone_profile: Optional[str],
     complexity: str,
     no_images: bool,
     no_charts: bool,
@@ -172,6 +178,7 @@ def generate(
     config = GenerationConfig(
         max_slides=slides,
         tone=tone,
+        tone_profile=tone_profile,
         complexity_level=complexity,
         include_images=not no_images,
         include_charts=not no_charts,
@@ -183,7 +190,10 @@ def generate(
     console.print(f"Output: {output}")
     console.print(f"Language: {lang}")
     console.print(f"Max slides: {slides}")
-    console.print(f"Config: {config.tone} tone, {config.complexity_level} complexity")
+    profile_info = f" using profile {tone_profile}" if tone_profile else ""
+    console.print(
+        f"Config: {config.tone} tone{profile_info}, {config.complexity_level} complexity"
+    )
     if auto_refine:
         console.print(f"Auto-refine: enabled (max {max_iterations} iterations)")
     console.print()

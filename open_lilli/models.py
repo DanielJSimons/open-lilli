@@ -130,6 +130,10 @@ class GenerationConfig(BaseModel):
     tone: str = Field(
         default="professional", description="Tone for content generation"
     )
+    tone_profile: Optional[str] = Field(
+        default=None,
+        description="Language code for tone profile to apply"
+    )
     complexity_level: str = Field(
         default="intermediate", 
         description="Complexity level (basic, intermediate, advanced)"
@@ -149,6 +153,7 @@ class GenerationConfig(BaseModel):
                 "include_images": True,
                 "include_charts": True,
                 "tone": "professional",
+                "tone_profile": "de",
                 "complexity_level": "intermediate",
                 "max_iterations": 3
             }

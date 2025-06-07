@@ -134,10 +134,10 @@ class TestVisualGenerator:
         slide = self.create_chart_slide()
         
         chart_path = self.generator._generate_bar_chart(slide)
-        
+
         assert chart_path is not None
         assert chart_path.exists()
-
+        assert "bar" in chart_path.name
 
 @patch('open_lilli.visual_generator.VisualGenerator._generate_bar_chart', return_value=MOCK_PNG_PATH)
 def test_native_bar_chart_when_enabled(mock_generate_bar, visual_generator_native_enabled):
@@ -212,7 +212,6 @@ def test_invalid_chart_data_type_fallback(mock_generate_chart_png, visual_genera
     # If the new logic in generate_visuals catches this before calling generate_chart, then it won't be called.
     # The current VisualGenerator change has a try-except that logs error, so generate_chart (PNG) won't be called.
     mock_generate_chart_png.assert_not_called()
-        assert "bar" in chart_path.name
 
     def test_generate_line_chart(self):
         """Test line chart generation."""

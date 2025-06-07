@@ -395,6 +395,21 @@ class TestContentGeneratorToneProfiles:
         prompt_it = generator._build_content_prompt(slide, config, None, "it")
         assert "Tone: default_config_tone" in prompt_it
 
+    def test_build_content_prompt_with_explicit_tone_profile(self, mocker):
+        """Explicit tone profile overrides language setting."""
+        mock_profiles = {"ja": "test polite"}
+        mocker.patch(
+            "open_lilli.content_generator._load_tone_profiles_static",
+            return_value=mock_profiles
+        )
+
+        generator = ContentGenerator(self.mock_client)
+        slide = self.create_test_slide()
+        config = GenerationConfig(tone="default", tone_profile="ja")
+
+        prompt = generator._build_content_prompt(slide, config, None, "en")
+        assert "Tone: test polite" in prompt
+
     def test_tone_profile_loading_file_not_found(self, mocker, caplog):
         """Test behavior when tone profiles file is not found."""
         mocker.patch("open_lilli.content_generator.TONE_PROFILES_PATH.exists", return_value=False)
