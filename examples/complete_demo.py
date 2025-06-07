@@ -229,7 +229,7 @@ def main():
             
             # Step 5: Generate Content
             task5 = progress.add_task("✍️  Generating slide content...", total=None)
-            content_generator = ContentGenerator(openai_client)
+            content_generator = ContentGenerator(openai_client, template_parser=template_parser)
             enhanced_slides = content_generator.generate_content(
                 planned_slides, config, outline.style_guidance, "en"
             )

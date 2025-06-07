@@ -2,17 +2,106 @@
 
 import json
 import logging
+import re
 import time
 from pathlib import Path
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Tuple, Union
 
 import openai
 from openai import OpenAI
 from pydantic import ValidationError
 
-from .models import ReviewFeedback, SlidePlan
+from .models import QualityGateResult, QualityGates, ReviewFeedback, SlidePlan
 
 logger = logging.getLogger(__name__)
+
+
+def calculate_readability_score(text: str) -> float:
+    """
+    Calculate a simplified readability score based on Flesch Reading Ease.
+    
+    This is a simplified version that estimates reading difficulty.
+    Higher scores indicate more complex text.
+    
+    Args:
+        text: Text to analyze
+        
+    Returns:
+        Grade level (0-20+, where 9 = 9th grade level)
+    """
+    if not text or not text.strip():
+        return 0.0
+    
+    # Clean text and split into sentences
+    clean_text = re.sub(r'[^\w\s\.]', ' ', text)
+    sentences = [s.strip() for s in re.split(r'[.!?]+', clean_text) if s.strip()]
+    
+    if not sentences:
+        return 0.0
+    
+    # Count words and syllables
+    total_words = 0
+    total_syllables = 0
+    
+    for sentence in sentences:
+        words = sentence.split()
+        total_words += len(words)
+        
+        for word in words:
+            # Simple syllable counting
+            syllables = count_syllables(word.lower())
+            total_syllables += syllables
+    
+    if total_words == 0:
+        return 0.0
+    
+    # Calculate average sentence length and syllables per word
+    avg_sentence_length = total_words / len(sentences)
+    avg_syllables_per_word = total_syllables / total_words
+    
+    # Simplified Flesch-Kincaid Grade Level formula
+    # Adjusted for presentation context (typically shorter sentences)
+    grade_level = (0.39 * avg_sentence_length) + (11.8 * avg_syllables_per_word) - 15.59
+    
+    # Ensure reasonable bounds
+    return max(0.0, min(20.0, grade_level))
+
+
+def count_syllables(word: str) -> int:
+    """
+    Count syllables in a word using simple heuristics.
+    
+    Args:
+        word: Word to count syllables for
+        
+    Returns:
+        Number of syllables (minimum 1)
+    """
+    if not word:
+        return 0
+    
+    word = word.lower()
+    
+    # Remove common endings that don't add syllables
+    word = re.sub(r'[.,:;!?]', '', word)
+    
+    # Count vowel groups
+    vowels = 'aeiouy'
+    syllable_count = 0
+    prev_was_vowel = False
+    
+    for char in word:
+        is_vowel = char in vowels
+        if is_vowel and not prev_was_vowel:
+            syllable_count += 1
+        prev_was_vowel = is_vowel
+    
+    # Handle silent 'e'
+    if word.endswith('e') and syllable_count > 1:
+        syllable_count -= 1
+    
+    # Ensure at least 1 syllable
+    return max(1, syllable_count)
 
 
 class Reviewer:
@@ -37,8 +126,10 @@ class Reviewer:
         self,
         slides: List[SlidePlan],
         presentation_context: Optional[str] = None,
-        review_criteria: Optional[Dict[str, any]] = None
-    ) -> List[ReviewFeedback]:
+        review_criteria: Optional[Dict[str, any]] = None,
+        include_quality_gates: bool = False,
+        quality_gates: Optional[QualityGates] = None
+    ) -> Union[List[ReviewFeedback], Tuple[List[ReviewFeedback], QualityGateResult]]:
         """
         Review an entire presentation and provide feedback.
         
@@ -46,9 +137,12 @@ class Reviewer:
             slides: List of slides to review
             presentation_context: Context about the presentation (audience, purpose, etc.)
             review_criteria: Specific criteria to focus on during review
+            include_quality_gates: If True, also evaluate quality gates and return tuple
+            quality_gates: Quality gate configuration (uses defaults if None)
             
         Returns:
-            List of feedback items for improvement
+            List of feedback items for improvement, or tuple of (feedback, quality_gates_result)
+            if include_quality_gates is True
         """
         logger.info(f"Reviewing presentation with {len(slides)} slides")
         
@@ -68,10 +162,33 @@ class Reviewer:
             feedback_list = self._parse_feedback_response(feedback_data)
             
             logger.info(f"Generated {len(feedback_list)} feedback items")
+            
+            # Evaluate quality gates if requested
+            if include_quality_gates:
+                quality_result = self.evaluate_quality_gates(slides, feedback_list, quality_gates)
+                return feedback_list, quality_result
+            
             return feedback_list
             
         except Exception as e:
             logger.error(f"Presentation review failed: {e}")
+            if include_quality_gates:
+                # Return empty feedback and a failing quality gates result
+                empty_feedback = []
+                default_gates = quality_gates or QualityGates()
+                failing_result = QualityGateResult(
+                    status="needs_fix",
+                    gate_results={
+                        "bullet_count": False,
+                        "readability": False,
+                        "style_errors": False,
+                        "overall_score": False
+                    },
+                    violations=["Review failed due to an error"],
+                    recommendations=["Please retry the review"],
+                    metrics={}
+                )
+                return empty_feedback, failing_result
             return []
 
     def review_individual_slide(
@@ -154,6 +271,118 @@ Provide 3-5 specific, actionable feedback items focused on improving the present
         except Exception as e:
             logger.error(f"Flow check failed: {e}")
             return []
+
+    def evaluate_quality_gates(
+        self,
+        slides: List[SlidePlan],
+        feedback: List[ReviewFeedback],
+        gates: Optional[QualityGates] = None
+    ) -> QualityGateResult:
+        """
+        Evaluate presentation against quality gates to determine pass/fail status.
+        
+        Args:
+            slides: List of slides to evaluate
+            feedback: List of review feedback items
+            gates: Quality gate configuration (uses defaults if None)
+            
+        Returns:
+            QualityGateResult with pass/fail status and detailed metrics
+        """
+        logger.info("Evaluating presentation against quality gates")
+        
+        if gates is None:
+            gates = QualityGates()
+        
+        # Initialize results
+        gate_results = {}
+        violations = []
+        recommendations = []
+        metrics = {}
+        
+        # 1. Check bullet count per slide
+        max_bullets_found = 0
+        bullet_violations = []
+        
+        for slide in slides:
+            bullet_count = len(slide.bullets)
+            if bullet_count > max_bullets_found:
+                max_bullets_found = bullet_count
+            
+            if bullet_count > gates.max_bullets_per_slide:
+                violation = f"Slide {slide.index + 1} has {bullet_count} bullets (exceeds limit of {gates.max_bullets_per_slide})"
+                violations.append(violation)
+                bullet_violations.append(slide.index)
+        
+        gate_results["bullet_count"] = len(bullet_violations) == 0
+        metrics["max_bullets_found"] = max_bullets_found
+        
+        if bullet_violations:
+            recommendations.append(f"Reduce bullet points on slides {', '.join(str(i+1) for i in bullet_violations)} to {gates.max_bullets_per_slide} or fewer")
+        
+        # 2. Check readability grade
+        readability_scores = []
+        readability_violations = []
+        
+        for slide in slides:
+            # Combine title and bullet text for readability analysis
+            slide_text = slide.title
+            if slide.bullets:
+                slide_text += ". " + ". ".join(slide.bullets)
+            
+            if slide_text.strip():
+                readability_grade = calculate_readability_score(slide_text)
+                readability_scores.append(readability_grade)
+                
+                if readability_grade > gates.max_readability_grade:
+                    violation = f"Slide {slide.index + 1} has readability grade {readability_grade:.1f} (exceeds limit of {gates.max_readability_grade})"
+                    violations.append(violation)
+                    readability_violations.append(slide.index)
+        
+        gate_results["readability"] = len(readability_violations) == 0
+        
+        if readability_scores:
+            metrics["avg_readability_grade"] = sum(readability_scores) / len(readability_scores)
+            metrics["max_readability_grade"] = max(readability_scores)
+        else:
+            metrics["avg_readability_grade"] = 0.0
+            metrics["max_readability_grade"] = 0.0
+        
+        if readability_violations:
+            recommendations.append(f"Simplify language on slides {', '.join(str(i+1) for i in readability_violations)} to improve readability")
+        
+        # 3. Check style errors
+        style_error_count = sum(1 for f in feedback if f.category == "design" or f.category == "consistency")
+        gate_results["style_errors"] = style_error_count <= gates.max_style_errors
+        metrics["style_error_count"] = style_error_count
+        
+        if style_error_count > gates.max_style_errors:
+            violations.append(f"Found {style_error_count} style errors (exceeds limit of {gates.max_style_errors})")
+            recommendations.append("Address style and consistency issues identified in feedback")
+        
+        # 4. Check overall score
+        review_summary = self.get_review_summary(feedback)
+        overall_score = review_summary["overall_score"]
+        gate_results["overall_score"] = overall_score >= gates.min_overall_score
+        metrics["overall_score"] = overall_score
+        
+        if overall_score < gates.min_overall_score:
+            violations.append(f"Overall score {overall_score} is below minimum threshold of {gates.min_overall_score}")
+            recommendations.append("Address critical and high severity feedback to improve overall score")
+        
+        # Determine overall status
+        all_gates_passed = all(gate_results.values())
+        status = "pass" if all_gates_passed else "needs_fix"
+        
+        logger.info(f"Quality gates evaluation completed: {status} ({sum(gate_results.values())}/{len(gate_results)} gates passed)")
+        
+        return QualityGateResult(
+            status=status,
+            gate_results=gate_results,
+            violations=violations,
+            recommendations=recommendations,
+            metrics=metrics
+        )
 
     def _create_presentation_summary(
         self,

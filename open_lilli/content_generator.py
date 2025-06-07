@@ -9,6 +9,7 @@ import openai
 from openai import OpenAI
 
 from .models import GenerationConfig, SlidePlan
+from .template_parser import TemplateParser
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +17,13 @@ logger = logging.getLogger(__name__)
 class ContentGenerator:
     """Generates polished slide content using OpenAI models."""
 
-    def __init__(self, client: OpenAI, model: str = "gpt-4", temperature: float = 0.3):
+    def __init__(
+        self, 
+        client: OpenAI, 
+        model: str = "gpt-4", 
+        temperature: float = 0.3,
+        template_parser: Optional[TemplateParser] = None
+    ):
         """
         Initialize the content generator.
         
@@ -24,10 +31,12 @@ class ContentGenerator:
             client: OpenAI client instance
             model: Model name to use
             temperature: Temperature for generation (0.0 to 1.0)
+            template_parser: Optional template parser for style context
         """
         self.client = client
         self.model = model
         self.temperature = temperature
+        self.template_parser = template_parser
         self.max_retries = 3
         self.retry_delay = 1.0
 
@@ -142,6 +151,12 @@ class ContentGenerator:
         
         style_context += f"Tone: {config.tone}\n"
         style_context += f"Complexity level: {config.complexity_level}\n"
+        
+        # Add template style context if available
+        if self.template_parser:
+            template_style_context = self._build_template_style_context()
+            if template_style_context:
+                style_context += f"\nTemplate style requirements:\n{template_style_context}"
         
         # Build slide context
         slide_context = f"""Current slide information:
@@ -428,6 +443,59 @@ Return JSON with refined title, bullets, and speaker_notes."""
         
         return enhanced_slides
 
+    def regenerate_specific_slides(
+        self,
+        slides: List[SlidePlan],
+        config: Optional[GenerationConfig] = None,
+        style_guidance: Optional[str] = None,
+        language: str = "en",
+        feedback: Optional[str] = None
+    ) -> List[SlidePlan]:
+        """
+        Regenerate content for specific slides with optional feedback.
+        
+        Args:
+            slides: List of slide plans to regenerate
+            config: Generation configuration
+            style_guidance: Optional style guidance
+            language: Language code for content generation
+            feedback: Optional specific feedback to incorporate
+            
+        Returns:
+            List of slides with regenerated content
+        """
+        config = config or GenerationConfig()
+        
+        logger.info(f"Regenerating content for {len(slides)} specific slides")
+        if feedback:
+            logger.info(f"Applying feedback: {feedback[:100]}...")
+        
+        regenerated_slides = []
+        
+        for slide in slides:
+            try:
+                if feedback:
+                    # Use feedback-based refinement
+                    enhanced_slide = self.refine_content(slide, feedback, language)
+                else:
+                    # Standard content generation
+                    enhanced_slide = self._generate_slide_content(
+                        slide, config, style_guidance, language
+                    )
+                
+                regenerated_slides.append(enhanced_slide)
+                
+                # Small delay to avoid rate limiting
+                time.sleep(0.1)
+                
+            except Exception as e:
+                logger.error(f"Failed to regenerate content for slide {slide.index}: {e}")
+                # Use original slide as fallback
+                regenerated_slides.append(slide)
+        
+        logger.info(f"Regeneration completed for {len(regenerated_slides)} slides")
+        return regenerated_slides
+
     def get_content_statistics(self, slides: List[SlidePlan]) -> Dict[str, any]:
         """
         Get statistics about slide content.
@@ -461,3 +529,57 @@ Return JSON with refined title, bullets, and speaker_notes."""
             "slide_types": slide_types,
             "avg_words_per_slide": round(total_words / len(slides), 2) if slides else 0
         }
+    
+    def _build_template_style_context(self) -> str:
+        """
+        Build template style context for content generation prompts.
+        
+        Returns:
+            Style context string with template font and color information
+        """
+        if not self.template_parser:
+            return ""
+        
+        context_parts = []
+        
+        # Add theme colors
+        if hasattr(self.template_parser, 'palette') and self.template_parser.palette:
+            primary_colors = []
+            accent_colors = []
+            
+            for color_name, color_value in self.template_parser.palette.items():
+                if color_name in ['dk1', 'lt1']:
+                    primary_colors.append(f"{color_name}: {color_value}")
+                elif color_name.startswith('acc'):
+                    accent_colors.append(f"{color_name}: {color_value}")
+            
+            if primary_colors:
+                context_parts.append(f"- Primary colors: {', '.join(primary_colors)}")
+            if accent_colors:
+                context_parts.append(f"- Accent colors: {', '.join(accent_colors[:2])}")  # Use first 2 accent colors
+        
+        # Add font information if available
+        if hasattr(self.template_parser, 'template_style') and self.template_parser.template_style:
+            template_style = self.template_parser.template_style
+            
+            # Master font
+            if template_style.master_font:
+                font_info = f"{template_style.master_font.name}"
+                if template_style.master_font.size:
+                    font_info += f" ({template_style.master_font.size}pt)"
+                context_parts.append(f"- Primary font: {font_info}")
+            
+            # Theme fonts
+            if template_style.theme_fonts:
+                if 'major' in template_style.theme_fonts:
+                    context_parts.append(f"- Heading font: {template_style.theme_fonts['major']}")
+                if 'minor' in template_style.theme_fonts:
+                    context_parts.append(f"- Body font: {template_style.theme_fonts['minor']}")
+        
+        # Add brand voice guidance
+        if context_parts:
+            brand_voice = "Follow the corporate brand voice using the template's visual identity. "
+            brand_voice += "Ensure content aligns with the professional styling indicated by the template design."
+            context_parts.insert(0, f"- Brand voice: {brand_voice}")
+        
+        return "\n".join(context_parts)

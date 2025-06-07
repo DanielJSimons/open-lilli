@@ -3,7 +3,10 @@
 import pytest
 from pydantic import ValidationError
 
-from open_lilli.models import GenerationConfig, Outline, ReviewFeedback, SlidePlan
+from open_lilli.models import (
+    GenerationConfig, Outline, ReviewFeedback, SlidePlan,
+    FontInfo, BulletInfo, PlaceholderStyleInfo, TemplateStyle
+)
 
 
 class TestSlidePlan:
@@ -151,3 +154,207 @@ class TestReviewFeedback:
         )
         
         assert feedback.suggestion is None
+
+
+class TestFontInfo:
+    """Tests for FontInfo model."""
+
+    def test_font_info_creation(self):
+        """Test creating a valid FontInfo."""
+        font = FontInfo(
+            name="Calibri",
+            size=14,
+            weight="normal",
+            color="#000000"
+        )
+        
+        assert font.name == "Calibri"
+        assert font.size == 14
+        assert font.weight == "normal"
+        assert font.color == "#000000"
+
+    def test_font_info_minimal(self):
+        """Test FontInfo with minimal required fields."""
+        font = FontInfo(name="Arial")
+        
+        assert font.name == "Arial"
+        assert font.size is None
+        assert font.weight is None
+        assert font.color is None
+
+
+class TestBulletInfo:
+    """Tests for BulletInfo model."""
+
+    def test_bullet_info_creation(self):
+        """Test creating a valid BulletInfo."""
+        font = FontInfo(name="Calibri", size=12)
+        bullet = BulletInfo(
+            character="•",
+            font=font,
+            indent_level=0
+        )
+        
+        assert bullet.character == "•"
+        assert bullet.font == font
+        assert bullet.indent_level == 0
+
+    def test_bullet_info_minimal(self):
+        """Test BulletInfo with minimal fields."""
+        bullet = BulletInfo(character="○")
+        
+        assert bullet.character == "○"
+        assert bullet.font is None
+        assert bullet.indent_level == 0
+
+
+class TestPlaceholderStyleInfo:
+    """Tests for PlaceholderStyleInfo model."""
+
+    def test_placeholder_style_creation(self):
+        """Test creating a valid PlaceholderStyleInfo."""
+        font = FontInfo(name="Calibri", size=14)
+        bullet = BulletInfo(character="•", font=font)
+        
+        style = PlaceholderStyleInfo(
+            placeholder_type=2,
+            type_name="BODY",
+            default_font=font,
+            bullet_styles=[bullet]
+        )
+        
+        assert style.placeholder_type == 2
+        assert style.type_name == "BODY"
+        assert style.default_font == font
+        assert len(style.bullet_styles) == 1
+        assert style.bullet_styles[0] == bullet
+
+    def test_placeholder_style_minimal(self):
+        """Test PlaceholderStyleInfo with minimal fields."""
+        style = PlaceholderStyleInfo(
+            placeholder_type=1,
+            type_name="TITLE"
+        )
+        
+        assert style.placeholder_type == 1
+        assert style.type_name == "TITLE"
+        assert style.default_font is None
+        assert style.bullet_styles == []
+
+
+class TestTemplateStyle:
+    """Tests for TemplateStyle model."""
+
+    def test_template_style_creation(self):
+        """Test creating a valid TemplateStyle."""
+        master_font = FontInfo(name="Calibri", size=12)
+        title_font = FontInfo(name="Calibri", size=24, weight="bold")
+        body_font = FontInfo(name="Calibri", size=14)
+        
+        bullet = BulletInfo(character="•", font=body_font)
+        
+        title_style = PlaceholderStyleInfo(
+            placeholder_type=1,
+            type_name="TITLE",
+            default_font=title_font
+        )
+        
+        body_style = PlaceholderStyleInfo(
+            placeholder_type=2,
+            type_name="BODY",
+            default_font=body_font,
+            bullet_styles=[bullet]
+        )
+        
+        template_style = TemplateStyle(
+            master_font=master_font,
+            placeholder_styles={1: title_style, 2: body_style},
+            theme_fonts={"major": "Calibri", "minor": "Calibri"}
+        )
+        
+        assert template_style.master_font == master_font
+        assert len(template_style.placeholder_styles) == 2
+        assert template_style.placeholder_styles[1] == title_style
+        assert template_style.placeholder_styles[2] == body_style
+        assert template_style.theme_fonts["major"] == "Calibri"
+
+    def test_template_style_get_font_for_placeholder_type(self):
+        """Test getting font for placeholder type."""
+        master_font = FontInfo(name="Default", size=12)
+        title_font = FontInfo(name="Title Font", size=24)
+        
+        title_style = PlaceholderStyleInfo(
+            placeholder_type=1,
+            type_name="TITLE",
+            default_font=title_font
+        )
+        
+        template_style = TemplateStyle(
+            master_font=master_font,
+            placeholder_styles={1: title_style}
+        )
+        
+        # Should return specific font for title
+        font = template_style.get_font_for_placeholder_type(1)
+        assert font == title_font
+        
+        # Should return master font for unknown type
+        font = template_style.get_font_for_placeholder_type(999)
+        assert font == master_font
+
+    def test_template_style_get_bullet_style_for_level(self):
+        """Test getting bullet style for level."""
+        bullet_font = FontInfo(name="Calibri", size=14)
+        bullet0 = BulletInfo(character="•", font=bullet_font, indent_level=0)
+        bullet1 = BulletInfo(character="○", font=bullet_font, indent_level=1)
+        
+        body_style = PlaceholderStyleInfo(
+            placeholder_type=2,
+            type_name="BODY",
+            bullet_styles=[bullet0, bullet1]
+        )
+        
+        template_style = TemplateStyle(
+            placeholder_styles={2: body_style}
+        )
+        
+        # Should return correct bullet for level
+        bullet = template_style.get_bullet_style_for_level(2, 0)
+        assert bullet == bullet0
+        
+        bullet = template_style.get_bullet_style_for_level(2, 1)
+        assert bullet == bullet1
+        
+        # Should return None for unknown level or type
+        bullet = template_style.get_bullet_style_for_level(2, 5)
+        assert bullet is None
+        
+        bullet = template_style.get_bullet_style_for_level(999, 0)
+        assert bullet is None
+
+    def test_template_style_get_placeholder_style(self):
+        """Test getting placeholder style."""
+        title_style = PlaceholderStyleInfo(
+            placeholder_type=1,
+            type_name="TITLE"
+        )
+        
+        template_style = TemplateStyle(
+            placeholder_styles={1: title_style}
+        )
+        
+        # Should return style for known type
+        style = template_style.get_placeholder_style(1)
+        assert style == title_style
+        
+        # Should return None for unknown type
+        style = template_style.get_placeholder_style(999)
+        assert style is None
+
+    def test_template_style_minimal(self):
+        """Test TemplateStyle with minimal fields."""
+        template_style = TemplateStyle()
+        
+        assert template_style.master_font is None
+        assert template_style.placeholder_styles == {}
+        assert template_style.theme_fonts == {}

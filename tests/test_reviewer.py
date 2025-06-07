@@ -6,8 +6,8 @@ from unittest.mock import Mock
 import pytest
 from openai import OpenAI
 
-from open_lilli.models import ReviewFeedback, SlidePlan
-from open_lilli.reviewer import Reviewer
+from open_lilli.models import QualityGateResult, QualityGates, ReviewFeedback, SlidePlan
+from open_lilli.reviewer import Reviewer, calculate_readability_score, count_syllables
 
 
 class TestReviewer:
@@ -423,3 +423,377 @@ class TestReviewer:
         
         # Should return empty list on JSON parse failure
         assert feedback == []
+
+
+class TestReadabilityAssessment:
+    """Tests for readability assessment functions."""
+    
+    def test_count_syllables_simple_words(self):
+        """Test syllable counting for simple words."""
+        assert count_syllables("cat") == 1
+        assert count_syllables("dog") == 1
+        assert count_syllables("hello") == 2
+        assert count_syllables("business") == 3
+        assert count_syllables("presentation") == 4
+        
+    def test_count_syllables_edge_cases(self):
+        """Test syllable counting edge cases."""
+        assert count_syllables("") == 0
+        assert count_syllables("a") == 1
+        assert count_syllables("the") == 1
+        assert count_syllables("beautiful") == 3  # silent 'e'
+        assert count_syllables("create") == 2  # silent 'e'
+        
+    def test_count_syllables_complex_words(self):
+        """Test syllable counting for complex words."""
+        assert count_syllables("organization") >= 4
+        assert count_syllables("university") >= 4
+        assert count_syllables("development") >= 3
+        
+    def test_calculate_readability_score_empty_text(self):
+        """Test readability calculation with empty text."""
+        assert calculate_readability_score("") == 0.0
+        assert calculate_readability_score("   ") == 0.0
+        assert calculate_readability_score(None) == 0.0
+        
+    def test_calculate_readability_score_simple_text(self):
+        """Test readability calculation with simple text."""
+        simple_text = "The cat sat on the mat. It was a big cat."
+        score = calculate_readability_score(simple_text)
+        assert 0 <= score <= 20
+        assert score < 8  # Should be easy to read
+        
+    def test_calculate_readability_score_complex_text(self):
+        """Test readability calculation with complex text."""
+        complex_text = "The organizational infrastructure necessitates comprehensive implementation methodologies."
+        score = calculate_readability_score(complex_text)
+        assert score > 10  # Should be more difficult to read
+        
+    def test_calculate_readability_score_presentation_text(self):
+        """Test readability calculation with typical presentation text."""
+        presentation_text = "Market growth increased by 15% year-over-year. Customer satisfaction improved significantly."
+        score = calculate_readability_score(presentation_text)
+        assert 5 <= score <= 12  # Reasonable business presentation level
+
+
+class TestQualityGates:
+    """Tests for quality gate evaluation."""
+    
+    def setup_method(self):
+        """Set up test fixtures."""
+        self.mock_client = Mock(spec=OpenAI)
+        self.reviewer = Reviewer(self.mock_client)
+        
+    def create_test_slides_with_bullets(self, bullet_counts: list) -> list[SlidePlan]:
+        """Create test slides with specified bullet counts."""
+        slides = []
+        for i, count in enumerate(bullet_counts):
+            bullets = [f"Bullet point {j+1}" for j in range(count)]
+            slides.append(SlidePlan(
+                index=i,
+                slide_type="content",
+                title=f"Slide {i+1} Title",
+                bullets=bullets
+            ))
+        return slides
+        
+    def create_test_slides_with_readability(self) -> list[SlidePlan]:
+        """Create test slides with varying readability levels."""
+        return [
+            SlidePlan(
+                index=0,
+                slide_type="content",
+                title="Simple Title",
+                bullets=["Simple text.", "Easy to read.", "Short words."]
+            ),
+            SlidePlan(
+                index=1,
+                slide_type="content", 
+                title="Complex Organizational Infrastructure Analysis",
+                bullets=[
+                    "Comprehensive implementation methodologies necessitate organizational restructuring.",
+                    "Sophisticated analytical frameworks require interdisciplinary collaboration mechanisms.",
+                    "Multifaceted strategic initiatives demand extensive stakeholder engagement protocols."
+                ]
+            )
+        ]
+        
+    def create_test_feedback_with_style_errors(self, error_count: int) -> list[ReviewFeedback]:
+        """Create test feedback with specified number of style errors."""
+        feedback = []
+        
+        # Add non-style errors first
+        feedback.append(ReviewFeedback(
+            slide_index=0,
+            severity="medium",
+            category="content",
+            message="Content could be improved"
+        ))
+        
+        # Add style errors
+        for i in range(error_count):
+            if i % 2 == 0:
+                category = "design"
+            else:
+                category = "consistency"
+                
+            feedback.append(ReviewFeedback(
+                slide_index=i,
+                severity="medium",
+                category=category,
+                message=f"Style error {i+1}"
+            ))
+            
+        return feedback
+        
+    def test_quality_gates_default_config(self):
+        """Test quality gates with default configuration."""
+        gates = QualityGates()
+        assert gates.max_bullets_per_slide == 7
+        assert gates.max_readability_grade == 9.0
+        assert gates.max_style_errors == 0
+        assert gates.min_overall_score == 7.0
+        
+    def test_quality_gates_custom_config(self):
+        """Test quality gates with custom configuration."""
+        gates = QualityGates(
+            max_bullets_per_slide=5,
+            max_readability_grade=8.0,
+            max_style_errors=2,
+            min_overall_score=8.0
+        )
+        assert gates.max_bullets_per_slide == 5
+        assert gates.max_readability_grade == 8.0
+        assert gates.max_style_errors == 2
+        assert gates.min_overall_score == 8.0
+        
+    def test_evaluate_quality_gates_all_pass(self):
+        """Test quality gates evaluation when all gates pass."""
+        slides = self.create_test_slides_with_bullets([3, 2, 4])  # All under limit of 7
+        feedback = []  # No feedback means high score and no style errors
+        
+        result = self.reviewer.evaluate_quality_gates(slides, feedback)
+        
+        assert result.status == "pass"
+        assert result.gate_results["bullet_count"] is True
+        assert result.gate_results["readability"] is True
+        assert result.gate_results["style_errors"] is True
+        assert result.gate_results["overall_score"] is True
+        assert len(result.violations) == 0
+        assert result.passed_gates == 4
+        assert result.total_gates == 4
+        assert result.pass_rate == 100.0
+        
+    def test_evaluate_quality_gates_bullet_count_fail(self):
+        """Test quality gates when bullet count exceeds limit."""
+        slides = self.create_test_slides_with_bullets([3, 8, 4])  # Second slide exceeds limit
+        feedback = []
+        
+        result = self.reviewer.evaluate_quality_gates(slides, feedback)
+        
+        assert result.status == "needs_fix"
+        assert result.gate_results["bullet_count"] is False
+        assert any("Slide 2 has 8 bullets" in violation for violation in result.violations)
+        assert any("Reduce bullet points" in rec for rec in result.recommendations)
+        assert result.metrics["max_bullets_found"] == 8
+        
+    def test_evaluate_quality_gates_readability_fail(self):
+        """Test quality gates when readability exceeds limit."""
+        slides = self.create_test_slides_with_readability()
+        feedback = []
+        
+        # Use strict readability limit
+        gates = QualityGates(max_readability_grade=6.0)
+        result = self.reviewer.evaluate_quality_gates(slides, feedback, gates)
+        
+        assert result.status == "needs_fix"
+        assert result.gate_results["readability"] is False
+        assert any("readability grade" in violation for violation in result.violations)
+        assert any("Simplify language" in rec for rec in result.recommendations)
+        assert "avg_readability_grade" in result.metrics
+        assert "max_readability_grade" in result.metrics
+        
+    def test_evaluate_quality_gates_style_errors_fail(self):
+        """Test quality gates when style errors exceed limit."""
+        slides = self.create_test_slides_with_bullets([3, 2])
+        feedback = self.create_test_feedback_with_style_errors(2)  # 2 style errors, limit is 0
+        
+        result = self.reviewer.evaluate_quality_gates(slides, feedback)
+        
+        assert result.status == "needs_fix"
+        assert result.gate_results["style_errors"] is False
+        assert any("2 style errors" in violation for violation in result.violations)
+        assert any("style and consistency" in rec for rec in result.recommendations)
+        assert result.metrics["style_error_count"] == 2
+        
+    def test_evaluate_quality_gates_overall_score_fail(self):
+        """Test quality gates when overall score is too low."""
+        slides = self.create_test_slides_with_bullets([3, 2])
+        
+        # Create feedback that will result in low score
+        feedback = [
+            ReviewFeedback(
+                slide_index=0,
+                severity="critical",
+                category="content",
+                message="Critical issue 1"
+            ),
+            ReviewFeedback(
+                slide_index=1, 
+                severity="critical",
+                category="flow",
+                message="Critical issue 2"
+            ),
+            ReviewFeedback(
+                slide_index=0,
+                severity="high",
+                category="clarity",
+                message="High priority issue"
+            )
+        ]
+        
+        result = self.reviewer.evaluate_quality_gates(slides, feedback)
+        
+        assert result.status == "needs_fix"
+        assert result.gate_results["overall_score"] is False
+        assert any("Overall score" in violation for violation in result.violations)
+        assert any("critical and high severity" in rec for rec in result.recommendations)
+        assert result.metrics["overall_score"] < 7.0
+        
+    def test_evaluate_quality_gates_multiple_failures(self):
+        """Test quality gates with multiple failing gates."""
+        slides = self.create_test_slides_with_bullets([3, 10, 2])  # Bullet count failure
+        feedback = self.create_test_feedback_with_style_errors(3)  # Style error failure
+        
+        result = self.reviewer.evaluate_quality_gates(slides, feedback)
+        
+        assert result.status == "needs_fix"
+        assert result.gate_results["bullet_count"] is False
+        assert result.gate_results["style_errors"] is False
+        assert len(result.violations) >= 2
+        assert len(result.recommendations) >= 2
+        assert result.passed_gates < result.total_gates
+        assert result.pass_rate < 100.0
+        
+    def test_evaluate_quality_gates_custom_thresholds(self):
+        """Test quality gates with custom thresholds."""
+        slides = self.create_test_slides_with_bullets([6, 5, 4])  # Would pass default but fail custom
+        feedback = []
+        
+        # Custom stricter limits
+        gates = QualityGates(
+            max_bullets_per_slide=5,
+            max_readability_grade=7.0,
+            max_style_errors=0,
+            min_overall_score=8.0
+        )
+        
+        result = self.reviewer.evaluate_quality_gates(slides, feedback, gates)
+        
+        assert result.status == "needs_fix"
+        assert result.gate_results["bullet_count"] is False  # First slide has 6 bullets
+        assert any("exceeds limit of 5" in violation for violation in result.violations)
+        
+    def test_evaluate_quality_gates_empty_slides(self):
+        """Test quality gates with empty slides."""
+        slides = []
+        feedback = []
+        
+        result = self.reviewer.evaluate_quality_gates(slides, feedback)
+        
+        assert result.status == "pass"  # Empty presentation technically passes
+        assert result.gate_results["bullet_count"] is True
+        assert result.gate_results["readability"] is True
+        assert result.gate_results["style_errors"] is True
+        assert result.gate_results["overall_score"] is True  # Empty feedback gives perfect score
+        assert result.metrics["max_bullets_found"] == 0
+        
+    def test_quality_gate_result_properties(self):
+        """Test QualityGateResult properties."""
+        result = QualityGateResult(
+            status="needs_fix",
+            gate_results={
+                "gate1": True,
+                "gate2": False,
+                "gate3": True,
+                "gate4": False
+            },
+            violations=["Violation 1", "Violation 2"],
+            recommendations=["Rec 1", "Rec 2"]
+        )
+        
+        assert result.passed_gates == 2
+        assert result.total_gates == 4
+        assert result.pass_rate == 50.0
+        
+    def test_review_presentation_with_quality_gates(self):
+        """Test review_presentation with quality gates enabled."""
+        slides = self.create_test_slides_with_bullets([3, 2, 4])
+        
+        # Mock successful review
+        mock_response_data = [
+            {
+                "slide_index": 0,
+                "severity": "low",
+                "category": "content", 
+                "message": "Minor improvement needed"
+            }
+        ]
+        
+        mock_response = Mock()
+        mock_response.choices = [Mock()]
+        mock_response.choices[0].message.content = json.dumps(mock_response_data)
+        self.mock_client.chat.completions.create.return_value = mock_response
+        
+        # Test with quality gates enabled
+        feedback, quality_result = self.reviewer.review_presentation(
+            slides, 
+            include_quality_gates=True
+        )
+        
+        assert isinstance(feedback, list)
+        assert isinstance(quality_result, QualityGateResult)
+        assert len(feedback) == 1
+        assert quality_result.status in ["pass", "needs_fix"]
+        
+    def test_review_presentation_backward_compatibility(self):
+        """Test that review_presentation maintains backward compatibility."""
+        slides = self.create_test_slides_with_bullets([3, 2, 4])
+        
+        # Mock successful review
+        mock_response_data = [
+            {
+                "slide_index": 0,
+                "severity": "low",
+                "category": "content",
+                "message": "Minor improvement needed"
+            }
+        ]
+        
+        mock_response = Mock()
+        mock_response.choices = [Mock()]
+        mock_response.choices[0].message.content = json.dumps(mock_response_data)
+        self.mock_client.chat.completions.create.return_value = mock_response
+        
+        # Test without quality gates (default behavior)
+        feedback = self.reviewer.review_presentation(slides)
+        
+        assert isinstance(feedback, list)
+        assert len(feedback) == 1
+        
+    def test_review_presentation_with_quality_gates_api_failure(self):
+        """Test review_presentation with quality gates when API fails."""
+        slides = self.create_test_slides_with_bullets([3, 2, 4])
+        
+        # Mock API failure
+        self.mock_client.chat.completions.create.side_effect = Exception("API Error")
+        
+        feedback, quality_result = self.reviewer.review_presentation(
+            slides,
+            include_quality_gates=True
+        )
+        
+        assert feedback == []
+        assert isinstance(quality_result, QualityGateResult)
+        assert quality_result.status == "needs_fix"
+        assert "Review failed due to an error" in quality_result.violations

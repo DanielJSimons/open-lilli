@@ -8,6 +8,7 @@ import pytest
 from pptx import Presentation
 
 from open_lilli.template_parser import TemplateParser
+from open_lilli.models import TemplateStyle, FontInfo, BulletInfo, PlaceholderStyleInfo
 
 
 class TestTemplateParser:
@@ -242,6 +243,7 @@ class TestTemplateParser:
             assert "layout_mapping" in info
             assert "slide_dimensions" in info
             assert "theme_colors" in info
+            assert "template_style" in info
             
             # Verify slide dimensions structure
             dimensions = info["slide_dimensions"]
@@ -249,6 +251,16 @@ class TestTemplateParser:
             assert "height" in dimensions
             assert "width_inches" in dimensions
             assert "height_inches" in dimensions
+            
+            # Verify template style structure
+            template_style = info["template_style"]
+            assert "placeholder_styles_count" in template_style
+            assert "theme_fonts" in template_style
+            assert "has_master_font" in template_style
+            assert "placeholder_types_with_styles" in template_style
+            assert isinstance(template_style["placeholder_styles_count"], int)
+            assert isinstance(template_style["has_master_font"], bool)
+            assert isinstance(template_style["placeholder_types_with_styles"], list)
             
         finally:
             Path(template_path).unlink()
@@ -286,5 +298,353 @@ class TestTemplateParser:
             assert info.startswith("[")
             assert info.endswith("]")
             
+        finally:
+            Path(template_path).unlink()
+
+    def test_get_theme_colors_method(self):
+        """Test the get_theme_colors method exists and returns dict."""
+        template_path = self.create_test_template()
+        
+        try:
+            parser = TemplateParser(template_path)
+            
+            # Method should exist and return a dictionary
+            colors = parser.get_theme_colors()
+            assert isinstance(colors, dict)
+            
+            # Should contain standard theme color keys when extraction works
+            # (Will be empty for basic template without proper theme)
+            for key in colors:
+                assert isinstance(key, str)
+                if colors[key]:  # If color is not None/empty
+                    assert isinstance(colors[key], str)
+                    
+        finally:
+            Path(template_path).unlink()
+
+    def test_palette_contains_standard_colors(self):
+        """Test that palette contains standard theme colors."""
+        template_path = self.create_test_template()
+        
+        try:
+            parser = TemplateParser(template_path)
+            
+            # Should have standard theme color names
+            expected_colors = ['dk1', 'lt1', 'acc1', 'acc2', 'acc3', 'acc4', 'acc5', 'acc6']
+            
+            for color_name in expected_colors:
+                assert color_name in parser.palette
+                color_value = parser.palette[color_name]
+                assert isinstance(color_value, str)
+                assert color_value.startswith("#")
+                assert len(color_value) == 7  # Hex format #RRGGBB
+                
+        finally:
+            Path(template_path).unlink()
+
+    def test_get_theme_color_fallback(self):
+        """Test theme color retrieval with fallback behavior."""
+        template_path = self.create_test_template()
+        
+        try:
+            parser = TemplateParser(template_path)
+            
+            # Should return a valid color for standard names
+            for color_name in ['dk1', 'lt1', 'acc1', 'acc2', 'acc3', 'acc4', 'acc5', 'acc6']:
+                color = parser.get_theme_color(color_name)
+                assert isinstance(color, str)
+                assert color.startswith("#")
+                assert len(color) == 7
+            
+            # Should return black for unknown color (existing test)
+            color = parser.get_theme_color("unknown_color")
+            assert color == "#000000"
+            
+        finally:
+            Path(template_path).unlink()
+
+    def test_template_style_extraction(self):
+        """Test that template style is extracted during initialization."""
+        template_path = self.create_test_template()
+        
+        try:
+            parser = TemplateParser(template_path)
+            
+            # Check that template_style attribute exists
+            assert hasattr(parser, 'template_style')
+            assert isinstance(parser.template_style, TemplateStyle)
+            
+            # Check that get_template_style method works
+            style = parser.get_template_style()
+            assert isinstance(style, TemplateStyle)
+            assert style == parser.template_style
+            
+        finally:
+            Path(template_path).unlink()
+
+    def test_font_extraction_from_placeholder(self):
+        """Test font extraction from placeholders."""
+        template_path = self.create_test_template()
+        
+        try:
+            parser = TemplateParser(template_path)
+            
+            # Test getting font for different placeholder types
+            title_font = parser.get_font_for_placeholder_type(1)  # TITLE
+            if title_font:
+                assert isinstance(title_font, FontInfo)
+                assert isinstance(title_font.name, str)
+                assert title_font.name != ""
+                
+            body_font = parser.get_font_for_placeholder_type(2)  # BODY
+            if body_font:
+                assert isinstance(body_font, FontInfo)
+                assert isinstance(body_font.name, str)
+                
+        finally:
+            Path(template_path).unlink()
+
+    def test_bullet_style_extraction(self):
+        """Test bullet style extraction."""
+        template_path = self.create_test_template()
+        
+        try:
+            parser = TemplateParser(template_path)
+            
+            # Test getting bullet style for body placeholders
+            bullet_style = parser.get_bullet_style_for_level(2, 0)  # BODY, level 0
+            if bullet_style:
+                assert isinstance(bullet_style, BulletInfo)
+                assert isinstance(bullet_style.character, str)
+                assert bullet_style.indent_level == 0
+                
+                if bullet_style.font:
+                    assert isinstance(bullet_style.font, FontInfo)
+                
+        finally:
+            Path(template_path).unlink()
+
+    def test_template_style_placeholder_styles(self):
+        """Test that placeholder styles are extracted correctly."""
+        template_path = self.create_test_template()
+        
+        try:
+            parser = TemplateParser(template_path)
+            style = parser.get_template_style()
+            
+            # Check placeholder_styles structure
+            assert isinstance(style.placeholder_styles, dict)
+            
+            # Check that placeholder style info is properly structured
+            for ph_type, style_info in style.placeholder_styles.items():
+                assert isinstance(ph_type, int)
+                assert isinstance(style_info, PlaceholderStyleInfo)
+                assert style_info.placeholder_type == ph_type
+                assert isinstance(style_info.type_name, str)
+                assert isinstance(style_info.bullet_styles, list)
+                
+                # Check bullet styles if present
+                for bullet in style_info.bullet_styles:
+                    assert isinstance(bullet, BulletInfo)
+                    assert isinstance(bullet.character, str)
+                    assert isinstance(bullet.indent_level, int)
+                    assert bullet.indent_level >= 0
+                
+        finally:
+            Path(template_path).unlink()
+
+    def test_theme_fonts_extraction(self):
+        """Test theme fonts extraction."""
+        template_path = self.create_test_template()
+        
+        try:
+            parser = TemplateParser(template_path)
+            style = parser.get_template_style()
+            
+            # Check theme_fonts structure
+            assert isinstance(style.theme_fonts, dict)
+            
+            # Should have at least default entries
+            if style.theme_fonts:
+                for font_role, font_name in style.theme_fonts.items():
+                    assert isinstance(font_role, str)
+                    assert isinstance(font_name, str)
+                    assert font_name != ""
+                
+        finally:
+            Path(template_path).unlink()
+
+    def test_master_font_extraction(self):
+        """Test master font extraction."""
+        template_path = self.create_test_template()
+        
+        try:
+            parser = TemplateParser(template_path)
+            style = parser.get_template_style()
+            
+            # Master font should be present (at least default)
+            if style.master_font:
+                assert isinstance(style.master_font, FontInfo)
+                assert isinstance(style.master_font.name, str)
+                assert style.master_font.name != ""
+                
+                # Size should be positive if present
+                if style.master_font.size:
+                    assert style.master_font.size > 0
+                
+                # Weight should be valid
+                if style.master_font.weight:
+                    assert style.master_font.weight in ["normal", "bold"]
+                    
+                # Color should be valid hex if present
+                if style.master_font.color:
+                    assert style.master_font.color.startswith("#")
+                    assert len(style.master_font.color) == 7
+                
+        finally:
+            Path(template_path).unlink()
+
+    def test_font_fallback_behavior(self):
+        """Test font fallback when extraction fails."""
+        template_path = self.create_test_template()
+        
+        try:
+            parser = TemplateParser(template_path)
+            
+            # Test with non-existent placeholder type
+            font = parser.get_font_for_placeholder_type(999)
+            # Should return master font or None gracefully
+            if font:
+                assert isinstance(font, FontInfo)
+                
+        finally:
+            Path(template_path).unlink()
+
+    def test_bullet_level_fallback(self):
+        """Test bullet style fallback for different levels."""
+        template_path = self.create_test_template()
+        
+        try:
+            parser = TemplateParser(template_path)
+            
+            # Test multiple indentation levels
+            for level in range(5):
+                bullet = parser.get_bullet_style_for_level(2, level)  # BODY type
+                if bullet:
+                    assert isinstance(bullet, BulletInfo)
+                    assert bullet.indent_level == level
+                    assert bullet.character in ["•", "○", "▪", "‒", "►", ""]
+                    
+        finally:
+            Path(template_path).unlink()
+
+    def test_style_info_methods(self):
+        """Test TemplateStyle helper methods."""
+        template_path = self.create_test_template()
+        
+        try:
+            parser = TemplateParser(template_path)
+            style = parser.get_template_style()
+            
+            # Test get_font_for_placeholder_type method
+            for ph_type in [1, 2, 3]:  # Common placeholder types
+                font = style.get_font_for_placeholder_type(ph_type)
+                if font:
+                    assert isinstance(font, FontInfo)
+            
+            # Test get_bullet_style_for_level method
+            bullet = style.get_bullet_style_for_level(2, 0)
+            if bullet:
+                assert isinstance(bullet, BulletInfo)
+                
+            # Test get_placeholder_style method
+            placeholder_style = style.get_placeholder_style(2)
+            if placeholder_style:
+                assert isinstance(placeholder_style, PlaceholderStyleInfo)
+                
+        finally:
+            Path(template_path).unlink()
+
+    def create_test_template_with_fonts(self) -> str:
+        """Create a test template with specific font configuration."""
+        prs = Presentation()
+        
+        # Add a slide with title and content
+        slide_layout = prs.slide_layouts[0]  # Title slide
+        slide = prs.slides.add_slide(slide_layout)
+        
+        # Set title text to trigger font extraction
+        if slide.shapes.title:
+            slide.shapes.title.text = "Test Title"
+            
+        # Add content slide
+        if len(prs.slide_layouts) > 1:
+            content_layout = prs.slide_layouts[1]  # Content slide
+            content_slide = prs.slides.add_slide(content_layout)
+            
+            if content_slide.shapes.title:
+                content_slide.shapes.title.text = "Content Title"
+                
+            # Try to add body text
+            for shape in content_slide.shapes:
+                if hasattr(shape, 'text_frame') and shape.text_frame:
+                    shape.text = "• Bullet point 1\n• Bullet point 2"
+                    break
+        
+        # Create temporary file
+        temp_file = tempfile.NamedTemporaryFile(suffix='.pptx', delete=False)
+        temp_path = temp_file.name
+        temp_file.close()
+        
+        # Save the presentation
+        prs.save(temp_path)
+        return temp_path
+
+    def test_font_extraction_with_content(self):
+        """Test font extraction with actual content."""
+        template_path = self.create_test_template_with_fonts()
+        
+        try:
+            parser = TemplateParser(template_path)
+            
+            # Should be able to extract fonts from populated template
+            assert hasattr(parser, 'template_style')
+            style = parser.get_template_style()
+            
+            # Check that we have some placeholder styles
+            assert isinstance(style.placeholder_styles, dict)
+            
+            # Master font should exist
+            if style.master_font:
+                assert isinstance(style.master_font, FontInfo)
+                assert style.master_font.name != ""
+                
+        finally:
+            Path(template_path).unlink()
+
+    def test_title_font_detection_specific(self):
+        """Test that title font detection works correctly on sample template."""
+        template_path = self.create_test_template_with_fonts()
+        
+        try:
+            parser = TemplateParser(template_path)
+            
+            # Test title font detection (placeholder type 1)
+            title_font = parser.get_font_for_placeholder_type(1)
+            
+            # Should have some font information for title
+            if title_font:
+                assert isinstance(title_font, FontInfo)
+                assert title_font.name is not None
+                assert title_font.name != ""
+                # Title fonts are typically larger
+                if title_font.size:
+                    assert title_font.size >= 12  # Reasonable minimum
+            else:
+                # If no specific title font, should fall back to master font
+                master_font = parser.get_template_style().master_font
+                assert master_font is not None
+                assert isinstance(master_font, FontInfo)
+                
         finally:
             Path(template_path).unlink()
