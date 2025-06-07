@@ -4,6 +4,8 @@ import json
 import logging
 import time
 from typing import Dict, List, Optional
+import yaml # Add this
+from pathlib import Path # Add this
 
 import openai
 from openai import OpenAI
@@ -11,8 +13,26 @@ from openai import OpenAI
 from .models import GenerationConfig, SlidePlan
 from .template_parser import TemplateParser
 
+# Setup module-level logger, as it's used in the helper function and class methods
 logger = logging.getLogger(__name__)
 
+TONE_PROFILES_PATH = Path(__file__).parent / "config" / "tone_profiles.yaml"
+
+def _load_tone_profiles_static(path: Path) -> Dict[str, str]:
+    if not path.exists():
+        logger.warning(f"Tone profiles file not found at {path}. Returning empty profiles.")
+        return {}
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            profiles = yaml.safe_load(f)
+            if not isinstance(profiles, dict):
+                logger.error(f"Tone profiles file at {path} is not a valid dictionary. Returning empty profiles.")
+                return {}
+            logger.info(f"Successfully loaded tone profiles from {path}")
+            return profiles
+    except Exception as e:
+        logger.error(f"Error loading tone profiles from {path}: {e}. Returning empty profiles.")
+        return {}
 
 class ContentGenerator:
     """Generates polished slide content using OpenAI models."""
@@ -39,6 +59,8 @@ class ContentGenerator:
         self.template_parser = template_parser
         self.max_retries = 3
         self.retry_delay = 1.0
+        # Load tone profiles
+        self.tone_profiles = _load_tone_profiles_static(TONE_PROFILES_PATH) # Uses the module-level function
 
     def generate_content(
         self,
@@ -149,9 +171,26 @@ class ContentGenerator:
         if style_guidance:
             style_context = f"Style guidance: {style_guidance}\n"
         
-        style_context += f"Tone: {config.tone}\n"
+        # Determine effective tone
+        effective_tone = config.tone  # Start with default tone from config
+        # self.tone_profiles is from __init__
+        if language in self.tone_profiles:
+            profile_tone = self.tone_profiles[language]
+            # Ensure profile tone is not empty and is a string before overriding
+            if profile_tone and isinstance(profile_tone, str):
+                effective_tone = profile_tone
+                logger.info(f"Using language-specific tone for '{language}': {effective_tone}")
+            else:
+                logger.warning(f"Empty or invalid tone profile for language '{language}' (value: {profile_tone}), using default from config: {config.tone}")
+
+        style_context += f"Tone: {effective_tone}\n"
         style_context += f"Complexity level: {config.complexity_level}\n"
         
+        # Specific instructions for German
+        if language == "de":
+            german_instructions = "For German, use the formal 'Sie' form. Keep sentences short and direct for good readability (German Flesch-Kincaid reading ease of 14 or less is ideal)."
+            style_context += f"German Language Specifics: {german_instructions}\n"
+
         # Add template style context if available
         if self.template_parser:
             template_style_context = self._build_template_style_context()

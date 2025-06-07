@@ -390,3 +390,204 @@ class TestSlideAssembler:
             result_path = self.assembler.assemble(outline, slides, visuals, output_path)
             
             assert result_path == output_path
+
+# Tests for T-55 (RTL & Font Fallback)
+class TestSlideAssemblerInternationalization:
+
+    def setup_method(self):
+        """Set up test fixtures for internationalization tests."""
+        self.mock_template_parser = Mock(spec=TemplateParser)
+        self.mock_template_style = Mock()
+
+        # Configure language_specific_fonts for tests
+        self.mock_template_style.language_specific_fonts = {
+            "ar": "Test Arabic Font",
+            "he": "Test Hebrew Font",
+            # "en" is not here, will use default
+        }
+        self.mock_template_parser.template_style = self.mock_template_style
+
+        # Mock methods from template_parser that _get_expected_font might call
+        self.mock_template_parser.get_bullet_style_for_level.return_value = None
+        self.mock_template_parser.get_font_for_placeholder_type.return_value = Mock(
+            name="Calibri", size=18, weight="normal", color="#000000"
+        )
+        self.mock_template_style.master_font = Mock(
+            name="Calibri", size=12, weight="normal", color="#000000"
+        )
+
+
+        self.assembler = SlideAssembler(template_parser=self.mock_template_parser)
+
+        # Mock for PP_ALIGN
+        self.PP_ALIGN_RIGHT = Mock() # Simulate PP_ALIGN.RIGHT
+        self.PP_ALIGN_LEFT = Mock()  # Simulate PP_ALIGN.LEFT
+
+        # Patch PP_ALIGN where it's imported in slide_assembler
+        patcher = patch('open_lilli.slide_assembler.PP_ALIGN')
+        self.mock_pp_align = patcher.start()
+        self.mock_pp_align.RIGHT = self.PP_ALIGN_RIGHT
+        self.mock_pp_align.LEFT = self.PP_ALIGN_LEFT # And any other used values
+
+    def teardown_method(self):
+        patch.stopall()
+
+    def create_mock_slide_with_text_frame(self):
+        """Creates a mock slide with title and body placeholders having text_frames and paragraphs."""
+        mock_slide = Mock()
+
+        # Title shape
+        mock_title_shape = Mock()
+        mock_title_shape.text_frame = Mock()
+        mock_title_paragraph = Mock()
+        mock_title_paragraph.runs = [Mock()] # Ensure run exists
+        mock_title_shape.text_frame.paragraphs = [mock_title_paragraph]
+        mock_slide.shapes.title = mock_title_shape
+
+        # Body placeholder for bullets
+        mock_body_placeholder = Mock()
+        mock_body_placeholder.placeholder_format.type = 2 # BODY
+        mock_body_placeholder.text_frame = Mock()
+
+        # Mock paragraphs for bullet content
+        # _add_bullet_content clears and then uses paragraphs[0] or adds new ones
+        mock_bullet_para1 = Mock()
+        mock_bullet_para1.runs = [Mock()]
+        mock_bullet_para1.text = "Bullet 1" # for the strip() check in RTL alignment
+
+        mock_body_placeholder.text_frame.paragraphs = [mock_bullet_para1]
+        def add_paragraph_mock():
+            new_para = Mock()
+            new_para.runs = [Mock()]
+            return new_para
+        mock_body_placeholder.text_frame.add_paragraph.side_effect = add_paragraph_mock
+
+        mock_slide.placeholders = [mock_body_placeholder]
+
+        return mock_slide, mock_title_paragraph, mock_bullet_para1
+
+
+    @pytest.mark.parametrize("language, should_align_rtl", [
+        ("ar", True), ("he", True), ("fa", True), ("en", False), ("fr", False)
+    ])
+    def test_rtl_text_alignment(self, language, should_align_rtl):
+        """Test _add_title and _add_bullet_content for RTL text alignment."""
+        mock_slide, mock_title_para, mock_bullet_para = self.create_mock_slide_with_text_frame()
+
+        # Test _add_title
+        self.assembler._add_title(mock_slide, "Test Title", language)
+        if should_align_rtl:
+            assert mock_title_para.alignment == self.PP_ALIGN_RIGHT
+        else:
+            # Ensure it wasn't set to RIGHT if not RTL (could be LEFT, or None if not touched)
+            if mock_title_para.alignment == self.PP_ALIGN_RIGHT:
+                 # This case means it was set to RIGHT when it shouldn't have been
+                assert not should_align_rtl # Fail the test
+
+        # Reset alignment for bullet test
+        mock_title_para.alignment = None
+        mock_bullet_para.alignment = None
+
+        # Test _add_bullet_content
+        self.assembler._add_bullet_content(mock_slide, ["Bullet 1"], language)
+        if should_align_rtl:
+            # This check needs to be on the actual paragraph object that received text
+            # For a single bullet, it's the first paragraph in the (mocked) text_frame
+            assert mock_slide.placeholders[0].text_frame.paragraphs[0].alignment == self.PP_ALIGN_RIGHT
+        else:
+            if mock_slide.placeholders[0].text_frame.paragraphs[0].alignment == self.PP_ALIGN_RIGHT:
+                assert not should_align_rtl
+
+
+    @pytest.mark.parametrize("language, expected_font", [
+        ("ar", "Test Arabic Font"),
+        ("he", "Test Hebrew Font"),
+        ("en", None) # No specific font for English in mock
+    ])
+    def test_proactive_font_selection(self, language, expected_font):
+        """Test proactive font selection in _add_title and _add_bullet_content."""
+        mock_slide, mock_title_para, mock_bullet_para = self.create_mock_slide_with_text_frame()
+
+        title_run_font = mock_title_para.runs[0].font
+        bullet_run_font = mock_bullet_para.runs[0].font
+
+        # Test _add_title
+        self.assembler._add_title(mock_slide, "Test Title", language)
+        if expected_font:
+            assert title_run_font.name == expected_font
+        else:
+            # Ensure it wasn't set if no specific font, or check it was set to a default if that's the logic
+            # Current logic: only sets if specific_font_name is found.
+             assert title_run_font.name != "Test Arabic Font" # Example, ensure it's not accidentally set
+             assert title_run_font.name != "Test Hebrew Font"
+
+
+        # Reset font name for bullet test
+        title_run_font.name = None
+        bullet_run_font.name = None
+
+        # Test _add_bullet_content
+        self.assembler._add_bullet_content(mock_slide, ["Bullet 1"], language)
+        if expected_font:
+            assert bullet_run_font.name == expected_font
+        else:
+            assert bullet_run_font.name != "Test Arabic Font"
+            assert bullet_run_font.name != "Test Hebrew Font"
+
+
+    def test_style_validation_aware_of_font_override(self):
+        """Test _validate_run_style's awareness of language-specific fonts."""
+        mock_run = Mock()
+        mock_run.font.name = "Test Arabic Font" # Actual font used
+
+        # Expected font from template (before override)
+        expected_font_from_template = Mock(spec=SlidePlan().model_fields['title'].default_factory().__class__) # Dummy FontInfo like object
+        expected_font_from_template.name = "Calibri"
+        expected_font_from_template.size = 18
+        expected_font_from_template.weight = "normal"
+        expected_font_from_template.color = "#000000"
+
+        # Enable font name enforcement for test
+        self.assembler.validation_config.enforce_font_name = True
+
+        # Test case 1: Language is "ar", font is the correct override "Test Arabic Font"
+        # _get_expected_font will return a FontInfo with name "Test Arabic Font"
+        # So _validate_run_style should receive an expected_font.name that matches run.font.name
+
+        # We need to mock _get_expected_font to simulate its new behavior correctly,
+        # or trust its implementation and test _validate_run_style directly with crafted expected_font.
+        # The implementation of _validate_run_style itself has the override check logic.
+
+        violations = self.assembler._validate_run_style(
+            mock_run,
+            expected_font_from_template, # This is what _validate_paragraph_style would pass after calling _get_expected_font without lang initially
+            slide_index=0, para_index=0, run_index=0,
+            language="ar" # This language is key for the internal override check
+        )
+        font_name_violations = [v for v in violations if v['type'] == 'font_name']
+        assert not font_name_violations, f"Validation failed for correct override: {font_name_violations}"
+
+        # Test case 2: Language is "ar", but font is something unexpected
+        mock_run.font.name = "Comic Sans MS"
+        violations_unexpected = self.assembler._validate_run_style(
+            mock_run, expected_font_from_template,
+            slide_index=0, para_index=0, run_index=0, language="ar"
+        )
+        font_name_violations_unexpected = [v for v in violations_unexpected if v['type'] == 'font_name']
+        assert font_name_violations_unexpected, "Validation did not catch incorrect font with language override active."
+        assert font_name_violations_unexpected[0]['actual'] == "Comic Sans MS"
+        # The expected from `expected_font_from_template` is "Calibri", but the logic inside
+        # _validate_run_style should ideally state what it expected considering the override language.
+        # However, the current implementation of _validate_run_style's override check just suppresses the error.
+        # It doesn't change the `expected` field in the violation report if an override was possible but not matched.
+
+        # Test case 3: Language is "en" (no override), font is "Test Arabic Font" (mismatch)
+        mock_run.font.name = "Test Arabic Font"
+        violations_en = self.assembler._validate_run_style(
+            mock_run, expected_font_from_template,
+            slide_index=0, para_index=0, run_index=0, language="en"
+        )
+        font_name_violations_en = [v for v in violations_en if v['type'] == 'font_name']
+        assert font_name_violations_en, "Validation failed for non-overridden language."
+        assert font_name_violations_en[0]['expected'] == "Calibri"
+        assert font_name_violations_en[0]['actual'] == "Test Arabic Font"
