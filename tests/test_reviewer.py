@@ -1,10 +1,12 @@
 """Tests for reviewer."""
 
 import json
-from unittest.mock import Mock
+from unittest.mock import Mock, MagicMock, PropertyMock, patch
 
 import pytest
 from openai import OpenAI
+from pptx.util import Inches
+from pptx.enum.text import MSO_AUTO_SIZE
 
 from open_lilli.models import (
     QualityGateResult,
@@ -54,12 +56,71 @@ def test_calculate_apca_contrast_ratio(fg_hex, bg_hex, expected_lc_approx, comme
 
 
 class TestReviewer:
+# --- Mock classes for pptx objects ---
+class MockParagraph:
+    def __init__(self, text=""):
+        self.text = text
+
+class MockTextFrame:
+    def __init__(self, text="", auto_size=MSO_AUTO_SIZE.NONE, word_wrap=True, paragraphs=None):
+        self.text = text
+        self.auto_size = auto_size
+        self.word_wrap = word_wrap
+        if paragraphs is None:
+            self.paragraphs = [MockParagraph(text=p_text) for p_text in text.split('\n')] if text else []
+        else:
+            self.paragraphs = paragraphs
+
+class MockShape:
+    def __init__(self, name="Test Shape", left=0, top=0, width=100, height=100,
+                 has_text_frame=False, text_frame_text="", shape_id=1,
+                 auto_size=MSO_AUTO_SIZE.NONE, word_wrap=True, paragraphs=None):
+        self.name = name
+        self.left = left
+        self.top = top
+        self.width = width
+        self.height = height
+        self.has_text_frame = has_text_frame
+        self.shape_id = shape_id
+        if has_text_frame:
+            self.text_frame = MockTextFrame(text=text_frame_text, auto_size=auto_size, word_wrap=word_wrap, paragraphs=paragraphs)
+        else:
+            self.text_frame = None # type: ignore
+
+class MockSlide:
+    def __init__(self, shapes=None):
+        self.shapes = shapes if shapes is not None else []
+
+class MockPresentation:
+    def __init__(self, slides=None, slide_width=Inches(10).emu, slide_height=Inches(7.5).emu):
+        self.slides = slides if slides is not None else []
+        self.slide_width = slide_width
+        self.slide_height = slide_height
+
+
+class TestReviewer:
     """Tests for Reviewer class."""
 
     def setup_method(self):
         """Set up test fixtures."""
         self.mock_client = Mock(spec=OpenAI)
-        self.reviewer = Reviewer(self.mock_client)
+        self.mock_template_style = MagicMock(spec=TemplateStyle)
+        self.mock_template_style.slide_width = Inches(10).emu
+        self.mock_template_style.slide_height = Inches(7.5).emu
+        # Basic theme colors and master font for contrast checks if needed by other tests
+        self.mock_template_style.theme_colors = {'lt1': '#FFFFFF', 'dk1': '#000000'}
+        self.mock_template_style.master_font = FontInfo(name="Arial", size=12, color="#000000")
+
+        self.mock_presentation = MockPresentation()
+
+        self.reviewer = Reviewer(
+            client=self.mock_client,
+            template_style=self.mock_template_style,
+            presentation=self.mock_presentation
+        )
+        # Minimal reviewer for tests not needing presentation/template_style
+        self.minimal_reviewer = Reviewer(client=self.mock_client, template_style=None, presentation=None)
+
 
     def create_test_slides(self) -> list[SlidePlan]:
         """Create test slides for review."""
@@ -90,9 +151,10 @@ class TestReviewer:
 
     def test_init(self):
         """Test Reviewer initialization."""
-        assert self.reviewer.client == self.mock_client
-        assert self.reviewer.model == "gpt-4"
-        assert self.reviewer.temperature == 0.2
+        assert self.minimal_reviewer.client == self.mock_client
+        assert self.minimal_reviewer.model == "gpt-4"
+        assert self.minimal_reviewer.temperature == 0.2
+        assert self.reviewer.presentation == self.mock_presentation # Check if set
 
     def test_review_presentation_success(self):
         """Test successful presentation review."""
@@ -124,7 +186,8 @@ class TestReviewer:
         
         self.mock_client.chat.completions.create.return_value = mock_response
         
-        feedback = self.reviewer.review_presentation(slides)
+        # Use minimal_reviewer if presentation object isn't strictly needed for this test's focus
+        feedback = self.minimal_reviewer.review_presentation(slides)
         
         assert len(feedback) == 2
         assert isinstance(feedback[0], ReviewFeedback)
@@ -138,8 +201,9 @@ class TestReviewer:
         """Test async review_presentation."""
         from unittest.mock import AsyncMock
 
-        async_client = AsyncMock()
-        reviewer = Reviewer(async_client)
+        async_client = AsyncMock() # type: ignore
+        # Pass presentation=None if not used by this specific async test path for quality gates
+        reviewer = Reviewer(client=async_client, presentation=None)
         slides = self.create_test_slides()
 
         mock_response_data = {"feedback": [{"slide_index": 0, "severity": "low", "category": "content", "message": "ok", "suggestion": "none"}]}
@@ -172,7 +236,7 @@ class TestReviewer:
         
         self.mock_client.chat.completions.create.return_value = mock_response
         
-        feedback = self.reviewer.review_individual_slide(slide)
+        feedback = self.minimal_reviewer.review_individual_slide(slide)
         
         assert len(feedback) == 1
         assert feedback[0].slide_index == 1  # Should be set to the slide's index
@@ -197,7 +261,7 @@ class TestReviewer:
         
         self.mock_client.chat.completions.create.return_value = mock_response
         
-        feedback = self.reviewer.check_presentation_flow(slides)
+        feedback = self.minimal_reviewer.check_presentation_flow(slides)
         
         assert len(feedback) == 1
         assert feedback[0].category == "flow"
@@ -207,7 +271,7 @@ class TestReviewer:
         slides = self.create_test_slides()
         context = "Executive presentation for Q4 review"
         
-        summary = self.reviewer._create_presentation_summary(slides, context)
+        summary = self.minimal_reviewer._create_presentation_summary(slides, context)
         
         assert "CONTEXT: Executive presentation" in summary
         assert "TOTAL SLIDES: 3" in summary
@@ -220,7 +284,7 @@ class TestReviewer:
         """Test flow summary creation."""
         slides = self.create_test_slides()
         
-        flow_summary = self.reviewer._create_flow_summary(slides)
+        flow_summary = self.minimal_reviewer._create_flow_summary(slides)
         
         assert "PRESENTATION STRUCTURE:" in flow_summary
         assert "TRANSITION ANALYSIS:" in flow_summary
@@ -240,7 +304,7 @@ class TestReviewer:
             }
         ]
         
-        feedback = self.reviewer._parse_feedback_response(response_data)
+        feedback = self.minimal_reviewer._parse_feedback_response(response_data)
         
         assert len(feedback) == 1
         assert feedback[0].slide_index == 0
@@ -259,7 +323,7 @@ class TestReviewer:
             ]
         }
         
-        feedback = self.reviewer._parse_feedback_response(response_data)
+        feedback = self.minimal_reviewer._parse_feedback_response(response_data)
         
         assert len(feedback) == 1
         assert feedback[0].slide_index == 1
@@ -279,7 +343,7 @@ class TestReviewer:
             }
         ]
         
-        feedback = self.reviewer._parse_feedback_response(response_data)
+        feedback = self.minimal_reviewer._parse_feedback_response(response_data)
         
         # Should only include the valid item
         assert len(feedback) == 1
@@ -308,7 +372,7 @@ class TestReviewer:
             )
         ]
         
-        prioritized = self.reviewer.prioritize_feedback(feedback_list)
+        prioritized = self.minimal_reviewer.prioritize_feedback(feedback_list)
         
         # Critical should be first, low should be last
         assert prioritized[0].severity == "critical"
@@ -329,7 +393,7 @@ class TestReviewer:
         ]
         
         # Filter for medium and above
-        filtered = self.reviewer.filter_feedback(feedback_list, min_severity="medium")
+        filtered = self.minimal_reviewer.filter_feedback(feedback_list, min_severity="medium")
         
         assert len(filtered) == 2
         assert all(f.severity in ["medium", "high"] for f in filtered)
@@ -349,7 +413,7 @@ class TestReviewer:
         ]
         
         # Filter for specific categories
-        filtered = self.reviewer.filter_feedback(
+        filtered = self.minimal_reviewer.filter_feedback(
             feedback_list, categories=["content", "flow"]
         )
         
@@ -371,7 +435,7 @@ class TestReviewer:
         ]
         
         # Filter for specific slides
-        filtered = self.reviewer.filter_feedback(
+        filtered = self.minimal_reviewer.filter_feedback(
             feedback_list, slide_indices=[0, 2]
         )
         
@@ -395,7 +459,7 @@ class TestReviewer:
             )
         ]
         
-        plan = self.reviewer.generate_improvement_plan(feedback_list)
+        plan = self.minimal_reviewer.generate_improvement_plan(feedback_list)
         
         assert plan["total_issues"] == 3
         assert plan["by_severity"]["critical"] == 1
@@ -410,7 +474,7 @@ class TestReviewer:
 
     def test_get_review_summary_no_issues(self):
         """Test review summary with no issues."""
-        summary = self.reviewer.get_review_summary([])
+        summary = self.minimal_reviewer.get_review_summary([])
         
         assert summary["total_feedback"] == 0
         assert summary["overall_score"] == 10
@@ -433,7 +497,7 @@ class TestReviewer:
             )
         ]
         
-        summary = self.reviewer.get_review_summary(feedback_list)
+        summary = self.minimal_reviewer.get_review_summary(feedback_list)
         
         assert summary["total_feedback"] == 4
         assert summary["severity_breakdown"]["critical"] == 1
@@ -446,7 +510,7 @@ class TestReviewer:
 
     def test_get_default_criteria(self):
         """Test default review criteria."""
-        criteria = self.reviewer._get_default_criteria()
+        criteria = self.minimal_reviewer._get_default_criteria()
         
         assert "clarity" in criteria
         assert "flow" in criteria
@@ -466,7 +530,7 @@ class TestReviewer:
         # Mock API failure
         self.mock_client.chat.completions.create.side_effect = Exception("API Error")
         
-        feedback = self.reviewer.review_presentation(slides)
+        feedback = self.minimal_reviewer.review_presentation(slides)
         
         # Should return empty list on failure
         assert feedback == []
@@ -481,7 +545,7 @@ class TestReviewer:
         
         self.mock_client.chat.completions.create.return_value = mock_response
         
-        feedback = self.reviewer.review_presentation(slides)
+        feedback = self.minimal_reviewer.review_presentation(slides)
         
         # Should return empty list on JSON parse failure
         assert feedback == []
@@ -543,8 +607,36 @@ class TestQualityGates:
     
     def setup_method(self):
         """Set up test fixtures."""
-        self.mock_client = Mock(spec=OpenAI)
-        self.reviewer = Reviewer(self.mock_client)
+        self.mock_openai_client = Mock(spec=OpenAI) # Renamed for clarity
+
+        # Mock TemplateStyle with slide dimensions
+        self.mock_template_style = MagicMock(spec=TemplateStyle)
+        self.mock_template_style.slide_width = Inches(10).emu
+        self.mock_template_style.slide_height = Inches(7.5).emu
+        # Basic theme colors and master font for contrast checks
+        self.mock_template_style.theme_colors = {'lt1': '#FFFFFF', 'dk1': '#000000'}
+        self.mock_template_style.master_font = FontInfo(name="Arial", size=12, color="#000000")
+        # Ensure placeholder_styles is a dict for contrast check fallback
+        self.mock_template_style.placeholder_styles = {}
+
+
+        # Mock Presentation
+        self.mock_presentation = MockPresentation(
+            slide_width=self.mock_template_style.slide_width,
+            slide_height=self.mock_template_style.slide_height
+        )
+
+        self.reviewer = Reviewer(
+            client=self.mock_openai_client,
+            template_style=self.mock_template_style,
+            presentation=self.mock_presentation
+        )
+        # Reviewer instance without presentation, for tests not needing it
+        self.reviewer_no_pres = Reviewer(
+            client=self.mock_openai_client,
+            template_style=self.mock_template_style, # Still provide template_style for other checks
+            presentation=None
+        )
         
     def create_test_slides_with_bullets(self, bullet_counts: list) -> list[SlidePlan]:
         """Create test slides with specified bullet counts."""
@@ -637,6 +729,20 @@ class TestQualityGates:
         slides = self.create_test_slides_with_bullets([3, 2, 4])  # All under limit of 7
         feedback = []  # No feedback means high score and no style errors
         
+        # This test might fail if contrast/alignment/overset checks are enabled by default
+        # and not properly mocked to pass.
+        # For an "all_pass", ensure reviewer has necessary mocks or gates are disabled.
+        # Using reviewer_no_pres to avoid alignment/overset if they are not the focus here.
+        # However, contrast check depends on template_style, which reviewer_no_pres has.
+
+        # For a true "all_pass" including new checks, mock presentation and shapes to pass
+        self.mock_presentation.slides = [
+            MockSlide(shapes=[]), # Slide 0
+            MockSlide(shapes=[]), # Slide 1
+            MockSlide(shapes=[])  # Slide 2
+        ] # Assuming 3 slides from create_test_slides_with_bullets
+
+        # Make sure the reviewer used has the presentation
         result = self.reviewer.evaluate_quality_gates(slides, feedback)
         
         assert result.status == "pass"
@@ -644,24 +750,24 @@ class TestQualityGates:
         assert result.gate_results["readability"] is True
         assert result.gate_results["style_errors"] is True
         assert result.gate_results["overall_score"] is True
-        # Assuming contrast_check is part of the default evaluation.
-        # If reviewer.template_style is not set, it defaults to fail.
-        # For an "all_pass" scenario, we need to mock template_style or ensure it's not run.
-        # For now, let's assume it's handled or this test needs more setup for contrast.
-        # The number of gates might be 5 if contrast check is included.
-        # assert result.gate_results["contrast_check"] is True
+        assert result.gate_results.get("contrast_check") is True # Should pass with default mock
+        assert result.gate_results.get("alignment_check") is True # Should pass with empty shapes
+        assert result.gate_results.get("overset_text_check") is True # Should pass with empty shapes
         assert len(result.violations) == 0
-        # Update gate count if contrast_check is consistently included
-        # assert result.passed_gates == 5
-        # assert result.total_gates == 5
-        # assert result.pass_rate == 100.0
+
+        # Total gates should be 7 if all are enabled and checked
+        assert result.total_gates >= 4 # At least the original 4, could be up to 7
+        if result.total_gates == 7: # If all checks ran
+             assert result.passed_gates == 7
+             assert result.pass_rate == 100.0
         
     def test_evaluate_quality_gates_bullet_count_fail(self):
         """Test quality gates when bullet count exceeds limit."""
         slides = self.create_test_slides_with_bullets([3, 8, 4])  # Second slide exceeds limit
         feedback = []
         
-        result = self.reviewer.evaluate_quality_gates(slides, feedback)
+        # Use reviewer_no_pres if alignment/overset are not the focus of this test
+        result = self.reviewer_no_pres.evaluate_quality_gates(slides, feedback)
         
         assert result.status == "needs_fix"
         assert result.gate_results["bullet_count"] is False
@@ -1037,3 +1143,148 @@ class TestQualityGates:
         assert result.gate_results.get("contrast_check") is False
         assert any("Contrast check could not be performed: Template style information is missing." in v for v in result.violations)
         assert result.metrics.get("min_abs_apca_lc_found") == 0.0 # Default if no Lc values calculated
+
+    # --- New tests for Alignment and Overset Text ---
+
+    def test_evaluate_quality_gates_alignment_pass(self):
+        """Test alignment check passes with shapes within margins."""
+        # Margins are 0.5 inches = 457200 EMUs
+        # Slide width 10 inches = 9144000 EMUs, Slide height 7.5 inches = 6858000 EMUs
+        margin_emu = Inches(0.5).emu
+        slide_w = self.mock_template_style.slide_width
+        slide_h = self.mock_template_style.slide_height
+
+        shapes = [
+            MockShape(name="Logo1",
+                      left=margin_emu, top=margin_emu,
+                      width=Inches(1).emu, height=Inches(1).emu) # Well within
+        ]
+        self.mock_presentation.slides = [MockSlide(shapes=shapes)]
+        slides_plan = [SlidePlan(index=0, slide_type="content", title="Test")]
+
+        result = self.reviewer.evaluate_quality_gates(slides_plan, [])
+
+        assert result.gate_results.get("alignment_check") is True
+        assert result.metrics.get("misaligned_shapes_count") == 0
+        assert not any("is outside defined margins" in v for v in result.violations)
+
+    def test_evaluate_quality_gates_alignment_fail_logo_misaligned(self):
+        """Test alignment check fails when a logo is outside margins."""
+        margin_emu = Inches(0.5).emu
+        shapes = [
+            MockShape(name="Logo Image",
+                      left=Inches(0.2).emu, top=margin_emu, # Left is too small (0.2 < 0.5)
+                      width=Inches(1).emu, height=Inches(1).emu)
+        ]
+        self.mock_presentation.slides = [MockSlide(shapes=shapes)]
+        slides_plan = [SlidePlan(index=0, slide_type="content", title="Test")]
+
+        result = self.reviewer.evaluate_quality_gates(slides_plan, [])
+
+        assert result.gate_results.get("alignment_check") is False
+        assert result.metrics.get("misaligned_shapes_count") == 1
+        assert any("Shape 'Logo Image' is outside defined margins" in v for v in result.violations)
+        assert any("Adjust position of logo 'Logo Image'" in r for r in result.recommendations)
+
+    def test_evaluate_quality_gates_alignment_skip_shape_with_none_dimensions(self):
+        """Test alignment check skips shapes with None dimensions."""
+        shapes = [
+            MockShape(name="ValidShape", left=0, top=0, width=100, height=100),
+            MockShape(name="NoneDimShape", left=0, top=0, width=None, height=None)
+        ]
+        self.mock_presentation.slides = [MockSlide(shapes=shapes)]
+        slides_plan = [SlidePlan(index=0, slide_type="content", title="Test")]
+        result = self.reviewer.evaluate_quality_gates(slides_plan, [])
+        assert result.gate_results.get("alignment_check") is True # ValidShape is within default margins
+        assert result.metrics.get("misaligned_shapes_count") == 0
+
+
+    def test_evaluate_quality_gates_overset_text_pass(self):
+        """Test overset text check passes for compliant shapes."""
+        shapes = [
+            MockShape(name="FitShape", has_text_frame=True, text_frame_text="Short text",
+                      auto_size=MSO_AUTO_SIZE.SHAPE_TO_FIT_TEXT),
+            MockShape(name="NonAutoSizeShort", has_text_frame=True, text_frame_text="This is short text.",
+                      auto_size=MSO_AUTO_SIZE.NONE)
+        ]
+        self.mock_presentation.slides = [MockSlide(shapes=shapes)]
+        slides_plan = [SlidePlan(index=0, slide_type="content", title="Test")]
+
+        result = self.reviewer.evaluate_quality_gates(slides_plan, [])
+
+        assert result.gate_results.get("overset_text_check") is True
+        assert result.metrics.get("overset_text_shapes_count") == 0
+
+    def test_evaluate_quality_gates_overset_text_fail_long_text(self):
+        """Test overset text check fails for shape with very long text and MSO_AUTO_SIZE.NONE."""
+        long_text = "This is an extremely long string of text that is designed to be well over two hundred and fifty characters to ensure that it triggers the heuristic for potential overset text detection in a shape that is not configured to automatically resize itself to fit the text content, which is a common cause of text overflow issues in presentations." * 2
+        shapes = [
+            MockShape(name="OversetTextShape", has_text_frame=True, text_frame_text=long_text,
+                      auto_size=MSO_AUTO_SIZE.NONE)
+        ]
+        self.mock_presentation.slides = [MockSlide(shapes=shapes)]
+        slides_plan = [SlidePlan(index=0, slide_type="content", title="Test")]
+
+        result = self.reviewer.evaluate_quality_gates(slides_plan, [])
+
+        assert result.gate_results.get("overset_text_check") is False
+        assert result.metrics.get("overset_text_shapes_count") == 1
+        assert any("Shape 'OversetTextShape' may have overset/hidden text" in v for v in result.violations)
+
+    def test_evaluate_quality_gates_overset_text_fail_word_wrap_false(self):
+        """Test overset text check fails for shape with word_wrap=False and long paragraph."""
+        long_paragraph_text = "This single paragraph is very long and has no line breaks, it should be flagged if word wrap is off as it will extend beyond typical shape boundaries."
+        paragraphs = [MockParagraph(text=long_paragraph_text)]
+        shapes = [
+            MockShape(name="NoWrapShape", has_text_frame=True, text_frame_text=long_paragraph_text, # text_frame_text for len > 250 check
+                      auto_size=MSO_AUTO_SIZE.NONE, word_wrap=False, paragraphs=paragraphs)
+        ]
+        # To ensure the primary len(text_frame.text) > 250 heuristic is also met for this specific test case path:
+        shapes[0].text_frame.text = long_paragraph_text * 3 # Make overall text long enough
+
+        self.mock_presentation.slides = [MockSlide(shapes=shapes)]
+        slides_plan = [SlidePlan(index=0, slide_type="content", title="Test")]
+
+        result = self.reviewer.evaluate_quality_gates(slides_plan, [])
+
+        assert result.gate_results.get("overset_text_check") is False
+        assert result.metrics.get("overset_text_shapes_count") == 1
+        assert any("Shape 'NoWrapShape' may have overset/hidden text" in v for v in result.violations)
+
+    def test_evaluate_quality_gates_layout_checks_skipped_no_presentation(self):
+        """Test layout checks are skipped if no presentation object is provided."""
+        slides_plan = [SlidePlan(index=0, slide_type="content", title="Test")]
+        # Use reviewer_no_pres which was initialized with presentation=None
+        result = self.reviewer_no_pres.evaluate_quality_gates(slides_plan, [])
+
+        assert result.gate_results.get("alignment_check") is True # Skipped, so defaults to True
+        assert result.gate_results.get("overset_text_check") is True # Skipped, so defaults to True
+        assert result.metrics.get("misaligned_shapes_count") == 0
+        assert result.metrics.get("overset_text_shapes_count") == 0
+        # Could also mock logger.warning and assert it was called
+
+    def test_evaluate_quality_gates_layout_checks_skipped_no_template_style_dims(self):
+        """Test layout checks are skipped if template_style has no dimensions."""
+        slides_plan = [SlidePlan(index=0, slide_type="content", title="Test")]
+
+        # Create a reviewer with a template_style that lacks slide dimensions
+        mock_ts_no_dims = MagicMock(spec=TemplateStyle)
+        mock_ts_no_dims.slide_width = None # or 0
+        mock_ts_no_dims.slide_height = None # or 0
+        # Ensure other necessary attributes for contrast check are present if it runs
+        mock_ts_no_dims.theme_colors = {'lt1': '#FFFFFF', 'dk1': '#000000'}
+        mock_ts_no_dims.master_font = FontInfo(name="Arial", size=12, color="#000000")
+        mock_ts_no_dims.placeholder_styles = {}
+
+
+        reviewer_no_dims = Reviewer(
+            client=self.mock_openai_client,
+            template_style=mock_ts_no_dims,
+            presentation=self.mock_presentation # Has presentation, but no dims from template
+        )
+        result = reviewer_no_dims.evaluate_quality_gates(slides_plan, [])
+
+        assert result.gate_results.get("alignment_check") is True # Skipped, so defaults to True
+        assert result.gate_results.get("overset_text_check") is True # Skipped, so defaults to True
+        assert result.metrics.get("misaligned_shapes_count") == 0
+        assert result.metrics.get("overset_text_shapes_count") == 0

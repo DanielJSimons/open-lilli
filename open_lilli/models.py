@@ -497,6 +497,30 @@ class QualityGates(BaseModel):
         default=45.0,
         description="Minimum acceptable absolute APCA Lc value for body text. Scores below this threshold are typically flagged."
     )
+    enable_alignment_check: bool = Field(
+        default=True,
+        description="Enable check for shape alignment within slide margins."
+    )
+    enable_overset_text_check: bool = Field(
+        default=True,
+        description="Enable check for overset or hidden text in shapes."
+    )
+    slide_margin_top_inches: float = Field(
+        default=0.5,
+        description="Top margin of the slide in inches."
+    )
+    slide_margin_bottom_inches: float = Field(
+        default=0.5,
+        description="Bottom margin of the slide in inches."
+    )
+    slide_margin_left_inches: float = Field(
+        default=0.5,
+        description="Left margin of the slide in inches."
+    )
+    slide_margin_right_inches: float = Field(
+        default=0.5,
+        description="Right margin of the slide in inches."
+    )
     
     class Config:
         """Pydantic configuration."""
@@ -508,7 +532,13 @@ class QualityGates(BaseModel):
                 "max_style_errors": 0,
                 "min_overall_score": 7.0,
                 "min_contrast_ratio": 4.5, # Kept for now for backward compatibility examples if any
-                "min_apca_lc_for_body_text": 45.0
+                "min_apca_lc_for_body_text": 45.0,
+                "enable_alignment_check": True,
+                "enable_overset_text_check": True,
+                "slide_margin_top_inches": 0.5,
+                "slide_margin_bottom_inches": 0.5,
+                "slide_margin_left_inches": 0.5,
+                "slide_margin_right_inches": 0.5
             }
         }
 
@@ -565,17 +595,23 @@ class QualityGateResult(BaseModel):
                     "readability": False,
                     "style_errors": True,
                     "overall_score": False,
-                    "contrast_check": False
+                    "contrast_check": False,
+                    "alignment_check": True,
+                    "overset_text_check": True,
                 },
                 "violations": [
                     "Slide 2 has readability grade 11.2 (exceeds limit of 9.0)",
                     "Overall score 6.5 is below minimum threshold of 7.0",
-                    "Slide 3 (Body Placeholder): APCA Lc is 35.0. Recommended minimum absolute Lc is 45.0 for body text."
+                    "Slide 3 (Body Placeholder): APCA Lc is 35.0. Recommended minimum absolute Lc is 45.0 for body text.",
+                    "Shape 'Logo' is outside the right slide margin.",
+                    "Shape 'TextBox 1' on slide 2 appears to have overset text."
                 ],
                 "recommendations": [
                     "Simplify language on Slide 2 to improve readability",
                     "Address critical and high severity feedback to improve overall score",
-                    "Improve text contrast on Slide 3 for better accessibility. Aim for absolute APCA Lc of 45.0 or higher."
+                    "Improve text contrast on Slide 3 for better accessibility. Aim for absolute APCA Lc of 45.0 or higher.",
+                    "Adjust position of 'Logo' to be within slide margins.",
+                    "Check 'TextBox 1' on slide 2 for text overflow and adjust size or content."
                 ],
                 "metrics": {
                     "max_bullets_found": 5,
@@ -587,7 +623,9 @@ class QualityGateResult(BaseModel):
                     "avg_apca_lc_found": 45.0,  # Example value
                     "max_apca_lc_found": 75.8,  # Example value
                     "min_abs_apca_lc_found": 20.5, # Example value
-                    "avg_abs_apca_lc_found": 50.0   # Example value
+                    "avg_abs_apca_lc_found": 50.0,   # Example value
+                    "misaligned_shapes_count": 0,
+                    "overset_text_shapes_count": 0
                 }
             }
         }

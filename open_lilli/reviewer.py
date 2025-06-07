@@ -12,6 +12,9 @@ from typing import Dict, List, Optional, Tuple, Union
 import openai
 from openai import OpenAI, AsyncOpenAI
 from pydantic import ValidationError
+from pptx.util import Inches
+from pptx.enum.text import MSO_AUTO_SIZE
+from pptx import Presentation as PptxPresentationType # For type hinting
 
 from .models import QualityGateResult, QualityGates, ReviewFeedback, SlidePlan, TemplateStyle, PlaceholderStyleInfo, FontInfo
 
@@ -231,10 +234,61 @@ def calculate_contrast_ratio(hex_color1: str, hex_color2: str) -> float:
     return calculate_apca_contrast_value(hex_color1, hex_color2)
 
 
+def _is_shape_within_margins(shape_bbox: Dict[str, int], slide_dims: Dict[str, int], margins_emu: Dict[str, int]) -> bool:
+    """Check if a shape's bounding box is within the defined slide margins."""
+    if shape_bbox['left'] < margins_emu['left']:
+        return False
+    if shape_bbox['top'] < margins_emu['top']:
+        return False
+    if (shape_bbox['left'] + shape_bbox['width']) > (slide_dims['width'] - margins_emu['right']):
+        return False
+    if (shape_bbox['top'] + shape_bbox['height']) > (slide_dims['height'] - margins_emu['bottom']):
+        return False
+    return True
+
+def _check_overset_text(shape) -> bool:
+    """
+    Heuristic check for overset text in a shape.
+    Returns True if overset text is suspected, False otherwise.
+    """
+    if not shape.has_text_frame or not shape.text_frame.text or not shape.text_frame.text.strip():
+        return False  # No text or only whitespace
+
+    text_frame = shape.text_frame
+
+    # If text auto-fits to shape or shape resizes to text, it's generally not overset in a hidden way.
+    if text_frame.auto_size == MSO_AUTO_SIZE.SHAPE_TO_FIT_TEXT or \
+       text_frame.auto_size == MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE:
+        return False
+
+    # Heuristic for MSO_AUTO_SIZE.NONE (or inherited NONE)
+    # This is a simplified check. More sophisticated checks might involve rendering text.
+    # Using a simple character count heuristic for now.
+    # This threshold might need tuning based on typical content and shape sizes.
+    if text_frame.auto_size == MSO_AUTO_SIZE.NONE or text_frame.auto_size is None:
+        # A large amount of text in a shape not set to auto-size is a strong indicator.
+        if len(text_frame.text) > 250:  # Arbitrary heuristic value
+            # Further simple check: if word_wrap is False and there's a long paragraph, it's likely overset.
+            if not text_frame.word_wrap:
+                for para in text_frame.paragraphs:
+                    if len(para.text) > 80: # Long paragraph without wrapping
+                        return True
+            return True # General flag for long text in non-autosizing shape
+
+    # Placeholder for more advanced heuristics (e.g., comparing text box size to rendered text size)
+    # For now, we rely on the above.
+    return False
+
+
 class Reviewer:
     """AI-powered presentation reviewer for quality feedback and iterative refinement."""
 
-    def __init__(self, client: OpenAI | AsyncOpenAI, model: str = "gpt-4", temperature: float = 0.2, template_style: Optional[TemplateStyle] = None):
+    def __init__(self,
+                 client: OpenAI | AsyncOpenAI,
+                 model: str = "gpt-4",
+                 temperature: float = 0.2,
+                 template_style: Optional[TemplateStyle] = None,
+                 presentation: Optional[PptxPresentationType] = None): # Added presentation
         """
         Initialize the reviewer.
         
@@ -243,6 +297,7 @@ class Reviewer:
             model: Model name to use for review
             temperature: Temperature for generation (lower for more consistent reviews)
             template_style: Optional TemplateStyle object for style-related checks.
+            presentation: Optional pptx.Presentation object for layout-based checks.
         """
         self.client = client
         self.model = model
@@ -250,6 +305,7 @@ class Reviewer:
         self.max_retries = 3
         self.retry_delay = 1.0
         self.template_style = template_style
+        self.presentation = presentation # Stored presentation object
 
     def review_presentation(
         self,
@@ -471,7 +527,44 @@ Provide 3-5 specific, actionable feedback items focused on improving the present
         violations = []
         recommendations = []
         metrics = {}
+
+        # --- Pre-computation for layout related checks ---
+        slide_width_emu = 0
+        slide_height_emu = 0
+        can_perform_layout_checks = False
+
+        if self.template_style and hasattr(self.template_style, 'slide_width') and hasattr(self.template_style, 'slide_height') and \
+           self.template_style.slide_width and self.template_style.slide_height:
+            slide_width_emu = self.template_style.slide_width
+            slide_height_emu = self.template_style.slide_height
+            if self.presentation:
+                can_perform_layout_checks = True
+            else:
+                logger.warning("Presentation object (self.presentation) not available to Reviewer. Skipping alignment and overset text checks.")
+        else:
+            logger.warning("TemplateStyle or its slide dimensions not available. Skipping alignment and overset text checks.")
+
+        if not can_perform_layout_checks:
+            gates.enable_alignment_check = False
+            gates.enable_overset_text_check = False
+            # Ensure gate_results for these checks are set to True (skipped = passed) if they were initially enabled
+            if "alignment_check" not in gate_results: gate_results["alignment_check"] = True
+            if "overset_text_check" not in gate_results: gate_results["overset_text_check"] = True
+
+
+        margins_emu = {
+            'left': Inches(gates.slide_margin_left_inches),
+            'top': Inches(gates.slide_margin_top_inches),
+            'right': Inches(gates.slide_margin_right_inches),
+            'bottom': Inches(gates.slide_margin_bottom_inches)
+        }
         
+        # --- Initialize counts for new checks ---
+        misaligned_shapes_count = 0
+        overset_text_shapes_count = 0
+        alignment_violations_details = [] # To gather names of misaligned shapes for summary recommendation
+        overset_violations_details = []   # To gather names of overset shapes for summary recommendation
+
         # 1. Check bullet count per slide
         max_bullets_found = 0
         bullet_violations = []
@@ -632,6 +725,75 @@ Provide 3-5 specific, actionable feedback items focused on improving the present
             gate_results["contrast_check"] = False # Mark as failed if template_style is missing
             violations.append("Contrast check could not be performed: Template style information is missing.")
             recommendations.append("Ensure Reviewer is initialized with template style information to perform contrast checks.")
+
+        # 6. Alignment Check
+        # Ensure checks run only if enabled in gates AND possible to perform
+        if gates.enable_alignment_check and can_perform_layout_checks:
+            slide_dims_emu = {'width': slide_width_emu, 'height': slide_height_emu}
+            for slide_plan in slides:
+                try:
+                    # self.presentation is confirmed available by can_perform_layout_checks
+                    pptx_slide = self.presentation.slides[slide_plan.index]
+                    for shape in pptx_slide.shapes:
+                        if not hasattr(shape, 'left') or not hasattr(shape, 'top') or \
+                           not hasattr(shape, 'width') or not hasattr(shape, 'height') or \
+                           shape.width is None or shape.height is None: # Ensure width/height are not None
+                            continue # Skip shapes without standard bounding box attributes
+
+                        shape_bbox = {'left': shape.left, 'top': shape.top, 'width': shape.width, 'height': shape.height}
+                        if not _is_shape_within_margins(shape_bbox, slide_dims_emu, margins_emu):
+                            misaligned_shapes_count += 1
+                            shape_name = shape.name or f"Shape ID {shape.shape_id}"
+                            detail = f"Slide {slide_plan.index + 1}: Shape '{shape_name}' is outside defined margins."
+                            violations.append(detail)
+                            if shape_name not in alignment_violations_details: # Add only unique names for summary
+                                alignment_violations_details.append(shape_name)
+
+                            # Specific recommendation for logos (example)
+                            if "logo" in shape_name.lower():
+                                recommendations.append(f"Adjust position of logo '{shape_name}' on slide {slide_plan.index + 1} to be within slide margins.")
+                except IndexError:
+                    logger.warning(f"Could not access slide at index {slide_plan.index} in presentation for alignment check.")
+                except Exception as e:
+                    logger.error(f"Error during alignment check for slide {slide_plan.index + 1}: {e}")
+
+            gate_results["alignment_check"] = misaligned_shapes_count == 0
+            if not gate_results["alignment_check"] and alignment_violations_details:
+                recommendations.append(f"Review alignment of shapes: {', '.join(sorted(list(set(alignment_violations_details))))} to ensure they are within margins.")
+        elif "alignment_check" not in gate_results: # Ensure it's set if check was enabled but skipped
+            gate_results["alignment_check"] = True
+
+
+        # 7. Overset Text Check
+        # Ensure checks run only if enabled in gates AND possible to perform
+        if gates.enable_overset_text_check and can_perform_layout_checks:
+            for slide_plan in slides:
+                try:
+                    # self.presentation is confirmed available by can_perform_layout_checks
+                    pptx_slide = self.presentation.slides[slide_plan.index]
+                    for shape in pptx_slide.shapes:
+                        if _check_overset_text(shape):
+                            overset_text_shapes_count += 1
+                            shape_name = shape.name or f"Shape ID {shape.shape_id}"
+                            detail = f"Slide {slide_plan.index + 1}: Shape '{shape_name}' may have overset/hidden text."
+                            violations.append(detail)
+                            summary_detail = f"'{shape_name}' on slide {slide_plan.index + 1}"
+                            if summary_detail not in overset_violations_details:
+                                overset_violations_details.append(summary_detail)
+                except IndexError:
+                    logger.warning(f"Could not access slide at index {slide_plan.index} in presentation for overset text check.")
+                except Exception as e:
+                    logger.error(f"Error during overset text check for slide {slide_plan.index + 1}: {e}")
+
+            gate_results["overset_text_check"] = overset_text_shapes_count == 0
+            if not gate_results["overset_text_check"] and overset_violations_details:
+                recommendations.append(f"Review shapes for potential overset text: {', '.join(sorted(list(set(overset_violations_details))))}.")
+        elif "overset_text_check" not in gate_results: # Ensure it's set if check was enabled but skipped
+             gate_results["overset_text_check"] = True
+
+
+        metrics["misaligned_shapes_count"] = misaligned_shapes_count
+        metrics["overset_text_shapes_count"] = overset_text_shapes_count
 
         # Determine overall status
         all_gates_passed = all(gate_results.values())
