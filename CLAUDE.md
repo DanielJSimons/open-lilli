@@ -140,12 +140,3 @@ For **maintainability**, some additional practices are recommended:
 
 Finally, consider **scalability** and performance. Generating a full presentation involves multiple OpenAI calls and file operations. Caching can be useful – for example, if the same image or chart would be used in multiple places, generate it once and reuse. If the content script is very large, you might summarize sections one by one rather than feed a huge text into GPT at once (avoiding token limits). Using the streaming capability of OpenAI API could also be considered to display partial results sooner, though for slide generation it’s usually fine to wait for the whole output.
 
-In terms of timeline, this field is evolving rapidly. Today (2025), we see robust implementations like McKinsey’s Lilli and BCG’s Deckster proving that AI can handle a lot of the grunt work of slide creation. The approach described above brings together the best of these ideas – using a **template-driven** design to maintain branding, and a **pipeline of AI and programmatic steps** to produce content and visuals. By adhering to these best practices in template parsing, content generation, and system architecture, one can build a powerful presentation generator that saves time while delivering professional, coherent slide decks.
-
-**Sources:**
-
-* McKinsey’s Lilli AI for slide and document creation
-* BCG’s Deckster tool and its training on templates & review feature
-* Slide generation pipeline example (Kevin Goedecke’s PDF-to-slides)
-* Python-pptx usage for layouts and placeholders
-* OpenAI and automation in slide generation (examples with GPT and code)
