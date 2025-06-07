@@ -1,0 +1,65 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "open-lilli"
+version = "0.1.0"
+description = "AI-powered PowerPoint generation tool inspired by McKinsey Lilli"
+readme = "README.md"
+authors = [{name = "Open Lilli Team"}]
+license = {text = "MIT"}
+requires-python = ">=3.11"
+dependencies = [
+    "python-pptx>=0.6.21",
+    "openai>=1.0.0",
+    "pydantic>=2.0.0",
+    "python-dotenv>=1.0.0",
+    "rich>=13.0.0",
+    "matplotlib>=3.7.0",
+    "pillow>=10.0.0",
+    "requests>=2.31.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "black>=23.0.0",
+    "isort>=5.12.0",
+    "flake8>=6.0.0",
+    "mypy>=1.5.0",
+    "pre-commit>=3.3.0",
+]
+
+[project.scripts]
+ai-ppt = "open_lilli.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["open_lilli*"]
+
+[tool.black]
+line-length = 88
+target-version = ['py311']
+
+[tool.isort]
+profile = "black"
+line_length = 88
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = "--cov=open_lilli --cov-report=term-missing"
+markers = [
+    "e2e: marks tests as end-to-end tests",
+    "unit: marks tests as unit tests",
+]
