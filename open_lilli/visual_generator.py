@@ -12,8 +12,9 @@ import matplotlib.patches as patches
 import numpy as np
 import requests
 from PIL import Image, ImageDraw, ImageFont
+import openai # Added for generative AI
 
-from .models import SlidePlan, NativeChartData, ProcessFlowConfig, VisualExcellenceConfig, ChartType
+from .models import SlidePlan, NativeChartData, ProcessFlowConfig, VisualExcellenceConfig, ChartType, AssetLibraryConfig
 from .native_chart_builder import NativeChartBuilder
 from .process_flow_generator import ProcessFlowGenerator
 from .corporate_asset_library import CorporateAssetLibrary
@@ -167,17 +168,58 @@ class VisualGenerator:
             # Source image if image query is present
             if slide.image_query:
                 try:
+                    image_path = None
                     # Try corporate asset library first if enabled
                     if self.corporate_asset_library:
+                        target_aspect_ratio: Optional[float] = None
+                        # Attempt to find an image placeholder and its aspect ratio
+                        if self.template_parser and slide.layout_id is not None:
+                            try:
+                                layout = self.template_parser.get_layout(slide.layout_id)
+                                if layout and hasattr(layout, 'placeholders'):
+                                    for ph in layout.placeholders:
+                                        # Heuristic: find a picture placeholder.
+                                        # Common names: "Picture Placeholder", "Image Placeholder", "Slide Image"
+                                        # Common types: "PICTURE", "PIC" (depends on parser)
+                                        # Assuming ph.type_name or ph.name and ph.width, ph.height
+                                        is_picture_placeholder = False
+                                        if hasattr(ph, 'type_name') and isinstance(ph.type_name, str) and "PIC" in ph.type_name.upper():
+                                            is_picture_placeholder = True
+                                        elif hasattr(ph, 'name') and isinstance(ph.name, str) and "Picture" in ph.name:
+                                             is_picture_placeholder = True
+
+                                        if is_picture_placeholder and hasattr(ph, 'width') and hasattr(ph, 'height'):
+                                            if ph.width > 0 and ph.height > 0:
+                                                target_aspect_ratio = ph.width / ph.height
+                                                logger.info(f"Found image placeholder in layout {slide.layout_id} for slide {slide.index}. Target aspect ratio: {target_aspect_ratio:.2f}")
+                                                break # Use the first suitable one found
+                                    if not target_aspect_ratio:
+                                        logger.info(f"No suitable picture placeholder found or dimensions invalid in layout {slide.layout_id} for slide {slide.index}.")
+                            except Exception as e:
+                                logger.error(f"Error accessing layout or placeholders for slide {slide.index}, layout_id {slide.layout_id}: {e}")
+                        else:
+                            logger.info(f"No template parser or layout_id for slide {slide.index}, cannot determine target aspect ratio for CAL.")
+
                         image_path = self.corporate_asset_library.get_brand_approved_image(
-                            slide.image_query, slide.index
+                            query=slide.image_query,
+                            slide_index=slide.index,
+                            orientation=None, # Placeholder for future enhancement
+                            dominant_color=None, # Placeholder for future enhancement
+                            tags=None, # Placeholder for future enhancement
+                            target_aspect_ratio=target_aspect_ratio
                         )
-                    else:
-                        image_path = self.source_image(slide.image_query, slide.index)
-                    
-                    if image_path:
-                        slide_visuals["image"] = str(image_path)
-                        logger.info(f"Sourced image for slide {slide.index}: {image_path}")
+                        if image_path:
+                             slide_visuals["image"] = str(image_path)
+                             logger.info(f"Sourced image for slide {slide.index} via CorporateAssetLibrary: {image_path}")
+
+                    # If CAL is not enabled, or CAL returned None (signaling fallback is allowed)
+                    if not image_path:
+                        sourced_image_path = self.source_image(slide.image_query, slide.index, slide)
+                        if sourced_image_path:
+                            slide_visuals["image"] = str(sourced_image_path)
+                            logger.info(f"Sourced image for slide {slide.index} via VisualGenerator (GenAI/Unsplash/Placeholder): {sourced_image_path}")
+                        # If sourced_image_path is None, it means all fallbacks within source_image failed or it returned a placeholder.
+                        # The placeholder generation is handled within source_image itself if all else fails.
                 except Exception as e:
                     logger.error(f"Failed to source image for slide {slide.index}: {e}")
             
@@ -546,36 +588,155 @@ class VisualGenerator:
         
         return self.native_chart_builder.convert_legacy_chart_data(legacy_chart_data)
 
-    def source_image(self, query: str, slide_index: int) -> Optional[Path]:
+    def source_image(self, query: str, slide_index: int, slide_plan: SlidePlan) -> Optional[Path]:
         """
-        Source an image based on query.
+        Source an image based on query, trying Generative AI then Unsplash.
         
         Args:
             query: Search query for the image
             slide_index: Slide index for filename
+            slide_plan: The SlidePlan object for context (used by GenAI)
             
         Returns:
             Path to downloaded/generated image or None if failed
         """
         try:
-            # Check if we're in strict brand mode
+            # Check if we're in strict brand mode (this check might be redundant if CAL is called first,
+            # but good for direct calls to source_image or if CAL logic changes)
             if (self.corporate_asset_library and 
                 self.visual_config.asset_library and
                 self.visual_config.asset_library.brand_guidelines_strict):
-                logger.info(f"Strict brand mode: skipping external sources for '{query}'")
+                logger.info(f"Strict brand mode active: VisualGenerator will only create a placeholder if other methods (like CAL) haven't already.")
+                # This path should ideally be hit only if CAL decided not to provide an image AND strict mode is on.
+                # However, the main generate_visuals logic should prevent source_image from being called if CAL provided an image or placeholder in strict mode.
                 return self._generate_placeholder_image(query, slide_index)
+
+            # 1. Try Generative AI if enabled
+            if self.visual_config.enable_generative_ai and self.visual_config.asset_library:
+                logger.info(f"Attempting Generative AI for query: '{query}'")
+                gen_ai_image_path = self._source_from_generative_ai(query, slide_index, slide_plan, self.theme_colors)
+                if gen_ai_image_path:
+                    logger.info(f"Successfully sourced image from Generative AI: {gen_ai_image_path}")
+                    return gen_ai_image_path
+                else:
+                    logger.info(f"Generative AI did not return an image for query: '{query}'. Proceeding to other sources.")
+            else:
+                logger.info("Generative AI not enabled or asset_library not configured. Skipping.")
+
+            # 2. Try to source from Unsplash (free stock photos)
+            logger.info(f"Attempting Unsplash for query: '{query}'")
+            unsplash_image_path = self._source_from_unsplash(query, slide_index)
+            if unsplash_image_path:
+                logger.info(f"Successfully sourced image from Unsplash: {unsplash_image_path}")
+                return unsplash_image_path
+            else:
+                logger.info(f"Unsplash did not return an image for query: '{query}'. Proceeding to placeholder.")
             
-            # Try to source from Unsplash (free stock photos)
-            image_path = self._source_from_unsplash(query, slide_index)
-            if image_path:
-                return image_path
-            
-            # Fallback to generating a placeholder
+            # 3. Fallback to generating a placeholder if all else fails
+            logger.info(f"All external image sources failed for query '{query}'. Generating placeholder.")
             return self._generate_placeholder_image(query, slide_index)
             
         except Exception as e:
-            logger.error(f"Image sourcing failed for query '{query}': {e}")
+            logger.error(f"Image sourcing failed for query '{query}': {e}. Generating placeholder as a last resort.")
             return self._generate_placeholder_image(query, slide_index)
+
+    def _source_from_generative_ai(self, query: str, slide_index: int, slide_context: SlidePlan, palette: Dict[str, str]) -> Optional[Path]:
+        """Source an image from a generative AI provider."""
+        logger.info(f"Attempting to source image from generative AI for query: '{query}' (slide {slide_index})")
+
+        if not self.visual_config or \
+           not self.visual_config.asset_library or \
+           not self.visual_config.asset_library.generative_ai_provider:
+            logger.warning("Generative AI provider not configured in visual_config.asset_library. Skipping AI image generation.")
+            return None
+
+        asset_lib_config: AssetLibraryConfig = self.visual_config.asset_library
+        provider = asset_lib_config.generative_ai_provider
+        api_key = asset_lib_config.generative_ai_api_key
+        model_name = asset_lib_config.generative_ai_model
+
+        if not api_key:
+            logger.warning(f"API key for {provider} not configured. Skipping AI image generation.")
+            return None
+
+        # Construct detailed prompt
+        prompt_parts = [query]
+        if slide_context.title:
+            prompt_parts.append(f"Slide title: '{slide_context.title}'")
+        if slide_context.bullets:
+            bullets_str = "; ".join(slide_context.bullets)
+            prompt_parts.append(f"Slide bullets: {bullets_str}")
+
+        palette_desc = []
+        if palette.get("primary"):
+            palette_desc.append(f"primary color {palette['primary']}")
+        if palette.get("secondary"):
+            palette_desc.append(f"secondary color {palette['secondary']}")
+        if palette.get("accent1"): # Assuming theme_colors has accent1, acc1 might be from template_palette
+            palette_desc.append(f"accent color {palette.get('accent1', palette.get('acc1'))}") # Check both keys
+
+        if palette_desc:
+            prompt_parts.append(f"Use a color palette with: {', '.join(palette_desc)}.")
+
+        prompt_parts.append("Style: photorealistic, suitable for a business presentation slide.")
+        detailed_prompt = ". ".join(prompt_parts)
+        logger.debug(f"Generative AI prompt for {provider}: {detailed_prompt}")
+
+        try:
+            if provider == 'dalle3':
+                openai.api_key = api_key
+                image_params = {
+                    "prompt": detailed_prompt,
+                    "n": 1,
+                    "size": "1792x1024", # Landscape for DALL-E 3
+                    "model": model_name or "dall-e-3"
+                }
+                logger.info(f"Calling OpenAI Image.create with params: {image_params}")
+                response = openai.Image.create(**image_params)
+                image_url = response.data[0].url
+
+                logger.info(f"Generated DALL·E 3 image URL: {image_url}")
+
+                # Download the image
+                image_response = requests.get(image_url, timeout=30)
+                image_response.raise_for_status()
+
+                # Save image
+                filename_query_part = re.sub(r'[^\w\s-]', '', query.lower()).replace(' ', '_')[:50]
+                filename = f"gen_image_slide_{slide_index}_{filename_query_part}.png"
+                output_path = self.output_dir / filename
+
+                with open(output_path, 'wb') as f:
+                    f.write(image_response.content)
+                logger.info(f"Saved DALL·E 3 image to {output_path}")
+                return output_path
+
+            elif provider == 'stablediffusion':
+                # Placeholder for Stable Diffusion API call
+                logger.warning(f"Stable Diffusion provider selected, but implementation is a placeholder. API key: {api_key}, Model: {model_name}")
+                # Example:
+                # api_endpoint = "https://api.stablediffusion.com/v1/generate"
+                # headers = {"Authorization": f"Bearer {api_key}"}
+                # payload = {"prompt": detailed_prompt, "model": model_name, "size": "1024x1024"}
+                # response = requests.post(api_endpoint, headers=headers, json=payload)
+                # response.raise_for_status()
+                # image_data = response.content # or parse JSON for URL
+                # ... save image ...
+                return self._generate_placeholder_image(f"StableDiffusion: {query}", slide_index) # Return placeholder for now
+
+            else:
+                logger.error(f"Unknown generative AI provider: {provider}")
+                return None
+
+        except openai.APIError as e: # Specific OpenAI error
+            logger.error(f"OpenAI API error for query '{query}': {e}")
+            return None
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error downloading AI generated image for query '{query}': {e}")
+            return None
+        except Exception as e:
+            logger.error(f"Generative AI image sourcing failed for provider {provider}, query '{query}': {e}")
+            return None
 
     def _source_from_unsplash(self, query: str, slide_index: int) -> Optional[Path]:
         """Source image from Unsplash."""
