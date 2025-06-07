@@ -11,7 +11,7 @@ import openai
 from openai import OpenAI
 from pydantic import ValidationError
 
-from .models import QualityGateResult, QualityGates, ReviewFeedback, SlidePlan
+from .models import QualityGateResult, QualityGates, ReviewFeedback, SlidePlan, TemplateStyle, PlaceholderStyleInfo, FontInfo
 
 logger = logging.getLogger(__name__)
 
@@ -104,10 +104,73 @@ def count_syllables(word: str) -> int:
     return max(1, syllable_count)
 
 
+def calculate_contrast_ratio(hex_color1: str, hex_color2: str) -> float:
+    """
+    Calculate the contrast ratio between two hex colors.
+
+    Args:
+        hex_color1: The first hex color string (e.g., "#RRGGBB").
+        hex_color2: The second hex color string (e.g., "#RRGGBB").
+
+    Returns:
+        The contrast ratio.
+    """
+
+    def get_relative_luminance(hex_color: str) -> float:
+        """
+        Calculate the relative luminance of a hex color.
+
+        Args:
+            hex_color: The hex color string (e.g., "#RRGGBB").
+
+        Returns:
+            The relative luminance.
+        """
+        # Remove # if present
+        if hex_color.startswith("#"):
+            hex_color = hex_color[1:]
+
+        # Convert hex to RGB
+        r = int(hex_color[0:2], 16)
+        g = int(hex_color[2:4], 16)
+        b = int(hex_color[4:6], 16)
+
+        # Convert RGB to sRGB
+        srgb_r = r / 255.0
+        srgb_g = g / 255.0
+        srgb_b = b / 255.0
+
+        # Apply gamma correction
+        def adjust_channel(val):
+            if val <= 0.03928:
+                return val / 12.92
+            else:
+                return ((val + 0.055) / 1.055) ** 2.4
+
+        r_lum = adjust_channel(srgb_r)
+        g_lum = adjust_channel(srgb_g)
+        b_lum = adjust_channel(srgb_b)
+
+        # Calculate relative luminance
+        luminance = 0.2126 * r_lum + 0.7152 * g_lum + 0.0722 * b_lum
+        return luminance
+
+    lum1 = get_relative_luminance(hex_color1)
+    lum2 = get_relative_luminance(hex_color2)
+
+    # Determine L1 (lighter) and L2 (darker)
+    l1 = max(lum1, lum2)
+    l2 = min(lum1, lum2)
+
+    # Calculate contrast ratio
+    contrast_ratio = (l1 + 0.05) / (l2 + 0.05)
+    return contrast_ratio
+
+
 class Reviewer:
     """AI-powered presentation reviewer for quality feedback and iterative refinement."""
 
-    def __init__(self, client: OpenAI, model: str = "gpt-4", temperature: float = 0.2):
+    def __init__(self, client: OpenAI, model: str = "gpt-4", temperature: float = 0.2, template_style: Optional[TemplateStyle] = None):
         """
         Initialize the reviewer.
         
@@ -115,12 +178,14 @@ class Reviewer:
             client: OpenAI client instance
             model: Model name to use for review
             temperature: Temperature for generation (lower for more consistent reviews)
+            template_style: Optional TemplateStyle object for style-related checks.
         """
         self.client = client
         self.model = model
         self.temperature = temperature
         self.max_retries = 3
         self.retry_delay = 1.0
+        self.template_style = template_style
 
     def review_presentation(
         self,
@@ -369,7 +434,84 @@ Provide 3-5 specific, actionable feedback items focused on improving the present
         if overall_score < gates.min_overall_score:
             violations.append(f"Overall score {overall_score} is below minimum threshold of {gates.min_overall_score}")
             recommendations.append("Address critical and high severity feedback to improve overall score")
-        
+
+        # 5. Contrast Ratio Check
+        # CRITICAL ASSUMPTION: self.template_style (TemplateStyle) is available on this Reviewer instance.
+        # This is not currently handled by __init__ and needs to be addressed separately.
+        # Also, this check simplifies by only considering a 'body' placeholder and its fill vs text/master font.
+        # A full check would need to iterate all text elements on a slide and their actual backgrounds.
+        contrast_violations = []
+        all_ratios = []
+        min_contrast_ratio_aa = 4.5  # WCAG AA for normal text
+
+        if hasattr(self, 'template_style') and self.template_style is not None:
+            placeholder_type_body = 2  # Assuming BODY placeholder type index for main content
+
+            for slide in slides:
+                placeholder_style: Optional[PlaceholderStyleInfo] = self.template_style.get_placeholder_style(placeholder_type_body)
+
+                text_color_hex: Optional[str] = None
+                background_color_hex: Optional[str] = None
+
+                if placeholder_style:
+                    # Determine Text Color
+                    if placeholder_style.default_font and placeholder_style.default_font.color:
+                        text_color_hex = placeholder_style.default_font.color
+
+                    # Determine Background Color (from placeholder fill first)
+                    if placeholder_style.fill_color:
+                        background_color_hex = placeholder_style.fill_color
+
+                # Fallback for Text Color (if not found in placeholder style)
+                if text_color_hex is None:
+                    if self.template_style.master_font and self.template_style.master_font.color:
+                        text_color_hex = self.template_style.master_font.color
+                    else:
+                        text_color_hex = "#000000"  # Default to black
+
+                # Fallback for Background Color (if not found in placeholder fill)
+                if background_color_hex is None:
+                    background_color_hex = self.template_style.theme_colors.get('lt1', '#FFFFFF') # Default to theme light or white
+
+                if text_color_hex and background_color_hex:
+                    try:
+                        ratio = calculate_contrast_ratio(text_color_hex, background_color_hex)
+                        all_ratios.append(ratio)
+
+                        if ratio < min_contrast_ratio_aa:
+                            violation_message = (
+                                f"Slide {slide.index + 1} (Body Placeholder): Poor contrast ratio {ratio:.2f} "
+                                f"(Text: {text_color_hex}, Background: {background_color_hex}). "
+                                f"Minimum AA is {min_contrast_ratio_aa}."
+                            )
+                            violations.append(violation_message)
+                            contrast_violations.append(slide.index)
+                    except Exception as e:
+                        logger.warning(f"Could not calculate contrast ratio for slide {slide.index + 1}: {e}")
+                else:
+                    logger.warning(f"Could not determine text/background color for contrast check on slide {slide.index + 1}.")
+
+            gate_results["contrast_check"] = len(contrast_violations) == 0
+            if all_ratios:
+                metrics["min_contrast_ratio_found"] = min(all_ratios)
+                metrics["avg_contrast_ratio"] = sum(all_ratios) / len(all_ratios)
+                metrics["max_contrast_ratio_found"] = max(all_ratios)
+            else:
+                metrics["min_contrast_ratio_found"] = 0.0
+                metrics["avg_contrast_ratio"] = 0.0
+                metrics["max_contrast_ratio_found"] = 0.0
+
+            if contrast_violations:
+                recommendations.append(
+                    f"Improve text contrast on slides: {', '.join(str(i + 1) for i in sorted(list(set(contrast_violations))))}. "
+                    f"Ensure a minimum ratio of {min_contrast_ratio_aa}:1 for normal text against its background."
+                )
+        else:
+            logger.warning("Skipping contrast ratio check: TemplateStyle not found on Reviewer instance.")
+            gate_results["contrast_check"] = False # Mark as failed if template_style is missing
+            violations.append("Contrast check could not be performed: Template style information is missing.")
+            recommendations.append("Ensure Reviewer is initialized with template style information to perform contrast checks.")
+
         # Determine overall status
         all_gates_passed = all(gate_results.values())
         status = "pass" if all_gates_passed else "needs_fix"

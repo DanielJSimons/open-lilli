@@ -6,8 +6,63 @@ from unittest.mock import Mock
 import pytest
 from openai import OpenAI
 
-from open_lilli.models import QualityGateResult, QualityGates, ReviewFeedback, SlidePlan
-from open_lilli.reviewer import Reviewer, calculate_readability_score, count_syllables
+from open_lilli.models import (
+    QualityGateResult,
+    QualityGates,
+    ReviewFeedback,
+    SlidePlan,
+    TemplateStyle,
+    FontInfo,
+    PlaceholderStyleInfo
+)
+from open_lilli.reviewer import Reviewer, calculate_readability_score, count_syllables, calculate_contrast_ratio
+
+
+# --- Tests for calculate_contrast_ratio ---
+
+def test_calculate_contrast_ratio():
+    """Test the calculate_contrast_ratio function with various color pairs."""
+    # Black and White (Max contrast)
+    assert calculate_contrast_ratio("#000000", "#FFFFFF") == pytest.approx(21.0)
+    assert calculate_contrast_ratio("000000", "FFFFFF") == pytest.approx(21.0)
+
+    # Red and White
+    assert calculate_contrast_ratio("#FF0000", "#FFFFFF") == pytest.approx(3.998, abs=0.001)
+
+    # Blue and White
+    assert calculate_contrast_ratio("#0000FF", "#FFFFFF") == pytest.approx(8.592, abs=0.001)
+
+    # Green and Black (Note: WCAG formula for Green #00FF00 vs Black #000000 is (0.7208 + 0.05) / (0 + 0.05) = 15.416)
+    # The L values are: L_green = 0.2126 * ((0/255)/12.92) + 0.7152 * ((255/255)/1.0) + 0.0722 * ((0/255)/12.92) = 0.7152
+    # My previous implementation used a slightly different calculation for R,G,B components of luminance.
+    # Let's recalculate based on the implementation:
+    # For #00FF00 (Green): r=0, g=1, b=0. R_lum=0, G_lum=1, B_lum=0. Lum_green = 0.7152
+    # For #000000 (Black): r=0, g=0, b=0. R_lum=0, G_lum=0, B_lum=0. Lum_black = 0
+    # Ratio = (0.7152 + 0.05) / (0 + 0.05) = 0.7652 / 0.05 = 15.304
+    assert calculate_contrast_ratio("#00FF00", "#000000") == pytest.approx(15.304, abs=0.001)
+
+    # Grey and Dark Grey (Example: #767676 on #242424) - L1=0.200, L2=0.022. Ratio=(0.200+0.05)/(0.022+0.05) = 3.47
+    # For #767676 (Grey): R,G,B = 118. sRGB=0.4627. Lum_channel = ((0.4627+0.055)/1.055)**2.4 = 0.1786
+    # Lum_grey = 0.2126*0.1786 + 0.7152*0.1786 + 0.0722*0.1786 = 0.1786
+    # For #242424 (Dark Grey): R,G,B = 36. sRGB=0.1412. Lum_channel = ((0.1412+0.055)/1.055)**2.4 = 0.0245
+    # Lum_dark_grey = 0.0245
+    # Ratio = (0.1786 + 0.05) / (0.0245 + 0.05) = 0.2286 / 0.0745 = 3.068
+    assert calculate_contrast_ratio("#767676", "#242424") == pytest.approx(3.068, abs=0.001)
+
+    # Identical colors
+    assert calculate_contrast_ratio("#1A2B3C", "#1A2B3C") == pytest.approx(1.0)
+    assert calculate_contrast_ratio("1A2B3C", "1a2b3c") == pytest.approx(1.0) # Case insensitivity for hex
+
+    # Test with known failing examples if any handy, or ensure logic is sound for thresholds
+    # Light Gray on White (should be low)
+    assert calculate_contrast_ratio("#D3D3D3", "#FFFFFF") == pytest.approx(1.63, abs=0.01) # L_D3D3D3 = 0.601, L_FFFFFF=1. Ratio = (1+0.05)/(0.601+0.05) = 1.613
+
+    # Test with known passing examples for AA
+    # Dark Slate Gray (#2F4F4F) on Light Gray (#D3D3D3)
+    # L_2F4F4F (R=47,G=79,B=79): sR=0.184, sG=0.310, sB=0.310 -> Rlum=0.029, Glum=0.072, Blum=0.072 -> L=0.066
+    # L_D3D3D3 (R=211,G=211,B=211): sRGB=0.827 -> L=0.629
+    # Ratio = (0.629+0.05)/(0.066+0.05) = 0.679 / 0.116 = 5.85
+    assert calculate_contrast_ratio("#2F4F4F", "#D3D3D3") == pytest.approx(5.85, abs=0.01)
 
 
 class TestReviewer:
@@ -797,3 +852,111 @@ class TestQualityGates:
         assert isinstance(quality_result, QualityGateResult)
         assert quality_result.status == "needs_fix"
         assert "Review failed due to an error" in quality_result.violations
+
+    def test_evaluate_quality_gates_contrast_check_pass(self):
+        """Test contrast check passes with good contrast."""
+        mock_client = Mock(spec=OpenAI)
+        template_style = TemplateStyle(
+            master_font=FontInfo(name="Arial", size=12, color="#000000"),
+            theme_colors={'lt1': '#FFFFFF', 'dk1': '#000000'},
+            placeholder_styles={
+                2: PlaceholderStyleInfo( # Body placeholder type
+                    placeholder_type=2,
+                    type_name="BODY",
+                    default_font=FontInfo(name="Arial", size=12, color="#000000"), # Black text
+                    fill_color="#FFFFFF", # White background
+                    bullet_styles=[]
+                )
+            }
+        )
+        reviewer = Reviewer(client=mock_client, template_style=template_style)
+        slides = [SlidePlan(index=0, slide_type="content", title="Test Slide Pass")]
+        gates = QualityGates() # Default min_contrast_ratio = 4.5
+
+        result = reviewer.evaluate_quality_gates(slides, [], gates)
+
+        assert result.gate_results.get("contrast_check") is True
+        assert result.metrics.get("min_contrast_ratio_found") == pytest.approx(21.0)
+        assert not any("Poor contrast ratio" in v for v in result.violations)
+
+    def test_evaluate_quality_gates_contrast_check_fail(self):
+        """Test contrast check fails with poor contrast."""
+        mock_client = Mock(spec=OpenAI)
+        # Gray #808080 on White #FFFFFF. Luminance for #808080 is approx 0.221. Ratio = (1+0.05)/(0.221+0.05) = 1.05/0.271 = 3.87
+        template_style = TemplateStyle(
+            master_font=FontInfo(name="Arial", size=12, color="#808080"),
+            theme_colors={'lt1': '#FFFFFF', 'dk1': '#000000'},
+            placeholder_styles={
+                2: PlaceholderStyleInfo(
+                    placeholder_type=2,
+                    type_name="BODY",
+                    default_font=FontInfo(name="Arial", size=12, color="#808080"), # Gray text
+                    fill_color="#FFFFFF", # White background
+                    bullet_styles=[]
+                )
+            }
+        )
+        reviewer = Reviewer(client=mock_client, template_style=template_style)
+        slides = [SlidePlan(index=0, slide_type="content", title="Test Slide Fail")]
+        gates = QualityGates()
+
+        result = reviewer.evaluate_quality_gates(slides, [], gates)
+
+        assert result.gate_results.get("contrast_check") is False
+        assert result.metrics.get("min_contrast_ratio_found") == pytest.approx(3.87, abs=0.01)
+        assert any("Slide 1 (Body Placeholder): Poor contrast ratio 3.87" in v for v in result.violations)
+
+    def test_evaluate_quality_gates_contrast_check_fallback_logic(self):
+        """Test contrast check with fallback color logic."""
+        mock_client = Mock(spec=OpenAI)
+
+        # Scenario A: Text from master_font, BG from theme_colors['lt1']
+        # Blue text (#0000FF) on White BG (#FFFFFF) -> Ratio ~8.59
+        ts_fallback_master = TemplateStyle(
+            master_font=FontInfo(name="Arial", size=12, color="#0000FF"),
+            theme_colors={'lt1': '#FFFFFF', 'dk1': '#000000'},
+            placeholder_styles={
+                2: PlaceholderStyleInfo(placeholder_type=2, type_name="BODY", default_font=None, fill_color=None, bullet_styles=[])
+            }
+        )
+        reviewer_a = Reviewer(client=mock_client, template_style=ts_fallback_master)
+        slides_a = [SlidePlan(index=0, slide_type="content", title="Fallback Test A")]
+        gates = QualityGates()
+        result_a = reviewer_a.evaluate_quality_gates(slides_a, [], gates)
+
+        assert result_a.gate_results.get("contrast_check") is True, "Scenario A failed"
+        assert result_a.metrics.get("min_contrast_ratio_found") == pytest.approx(8.59, abs=0.01), "Scenario A metrics failed"
+
+        # Scenario B: Text from default (#000000), BG from placeholder_style.fill_color
+        # Black text (#000000) on Green BG (#00FF00) -> Ratio ~15.3
+        ts_fallback_fill = TemplateStyle(
+            master_font=None, # No master font color
+            theme_colors={'lt1': '#CCCCCC', 'dk1': '#333333'}, # Theme colors not used for BG in this case
+            placeholder_styles={
+                2: PlaceholderStyleInfo(
+                    placeholder_type=2,
+                    type_name="BODY",
+                    default_font=None, # No placeholder font
+                    fill_color="#00FF00", # Green BG
+                    bullet_styles=[])
+            }
+        )
+        reviewer_b = Reviewer(client=mock_client, template_style=ts_fallback_fill)
+        slides_b = [SlidePlan(index=0, slide_type="content", title="Fallback Test B")]
+        result_b = reviewer_b.evaluate_quality_gates(slides_b, [], gates)
+
+        assert result_b.gate_results.get("contrast_check") is True, "Scenario B failed"
+        assert result_b.metrics.get("min_contrast_ratio_found") == pytest.approx(15.304, abs=0.001), "Scenario B metrics failed"
+
+    def test_evaluate_quality_gates_no_template_style(self):
+        """Test contrast check when template_style is None."""
+        mock_client = Mock(spec=OpenAI)
+        reviewer = Reviewer(client=mock_client, template_style=None) # No template style
+        slides = [SlidePlan(index=0, slide_type="content", title="No Template Style Test")]
+        gates = QualityGates()
+
+        result = reviewer.evaluate_quality_gates(slides, [], gates)
+
+        assert result.gate_results.get("contrast_check") is False
+        assert any("Contrast check could not be performed: Template style information is missing." in v for v in result.violations)
+        assert result.metrics.get("min_contrast_ratio_found") == 0.0 # Default if no ratios calculated
