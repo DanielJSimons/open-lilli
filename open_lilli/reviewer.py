@@ -5,6 +5,7 @@ import logging
 import re
 import time
 import asyncio
+import math # Added for APCA calculations if needed, though abs() and ** are built-in
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
 
@@ -105,67 +106,129 @@ def count_syllables(word: str) -> int:
     return max(1, syllable_count)
 
 
+APCA_CONSTANTS = {
+    'exponents': {'mainTRC': 2.4, 'normBG': 0.56, 'normTXT': 0.57, 'revTXT': 0.62, 'revBG': 0.65},
+    'colorSpace': {'sRco': 0.2126729, 'sGco': 0.7151522, 'sBco': 0.0721750},
+    'clamps': {'blkThrs': 0.022, 'blkClmp': 1.414, 'loClip': 0.1, 'deltaYmin': 0.0005},
+    'scalers': {'scaleBoW': 1.14, 'loBoWoffset': 0.027, 'scaleWoB': 1.14, 'loWoBoffset': 0.027}
+}
+
+
+def _calculate_apca_luminance(hex_color: str) -> float:
+    """
+    Calculate screen luminance (Y_s) for APCA from a hex color string.
+    """
+    # Remove # if present
+    if hex_color.startswith("#"):
+        hex_color = hex_color[1:]
+
+    # Convert hex to RGB (0-255)
+    r_int = int(hex_color[0:2], 16)
+    g_int = int(hex_color[2:4], 16)
+    b_int = int(hex_color[4:6], 16)
+
+    # Convert R, G, B to linear values (0-1 range)
+    r_lin = (r_int / 255.0) ** APCA_CONSTANTS['exponents']['mainTRC']
+    g_lin = (g_int / 255.0) ** APCA_CONSTANTS['exponents']['mainTRC']
+    b_lin = (b_int / 255.0) ** APCA_CONSTANTS['exponents']['mainTRC']
+
+    # Calculate Y_s (screen luminance)
+    y_s = (r_lin * APCA_CONSTANTS['colorSpace']['sRco'] +
+           g_lin * APCA_CONSTANTS['colorSpace']['sGco'] +
+           b_lin * APCA_CONSTANTS['colorSpace']['sBco'])
+    return y_s
+
+
+def _soft_clamp_black_level(y_c: float) -> float:
+    """
+    Apply a soft clamp to the black level of a luminance value.
+    """
+    b_thresh = APCA_CONSTANTS['clamps']['blkThrs']
+    b_exp = APCA_CONSTANTS['clamps']['blkClmp']
+
+    if y_c >= b_thresh:
+        return y_c
+    else:
+        # Ensure the base of the exponent is non-negative
+        base = b_thresh - y_c
+        if base < 0: # Should not happen if y_c < b_thresh
+            base = 0
+        return y_c + (base)**b_exp
+
+
+def calculate_apca_contrast_value(fg_hex: str, bg_hex: str) -> float:
+    """
+    Calculate the APCA contrast value (Lc) between two hex colors.
+    """
+    y_s_fg = _calculate_apca_luminance(fg_hex)
+    y_s_bg = _calculate_apca_luminance(bg_hex)
+
+    # Apply soft clamp
+    y_txt = _soft_clamp_black_level(y_s_fg)
+    y_bg = _soft_clamp_black_level(y_s_bg)
+
+    # Determine polarity and calculate S_pol
+    norm_txt_exp = APCA_CONSTANTS['exponents']['normTXT']
+    norm_bg_exp = APCA_CONSTANTS['exponents']['normBG']
+    rev_txt_exp = APCA_CONSTANTS['exponents']['revTXT']
+    rev_bg_exp = APCA_CONSTANTS['exponents']['revBG']
+
+    # Ensure y_txt and y_bg are non-negative before exponentiation if they can be negative
+    # However, luminance values (Y_s) and clamped values (Y_txt, Y_bg) should be >= 0.
+    # Based on APCA, Y values are typically >= 0.
+
+    if y_bg > y_txt:  # Normal polarity (perceivably dark text on light background)
+        s_pol = (y_bg**norm_bg_exp) - (y_txt**norm_txt_exp)
+    else:  # Reverse polarity (perceivably light text on dark background)
+        s_pol = (y_bg**rev_bg_exp) - (y_txt**rev_txt_exp)
+
+    # Clamp noise and scale (C)
+    p_in = APCA_CONSTANTS['clamps']['deltaYmin']
+    # scaleBoW and scaleWoB are the same in the provided constants
+    r_scale = APCA_CONSTANTS['scalers']['scaleBoW']
+
+    if abs(y_bg - y_txt) < p_in:
+        c_val = 0.0
+    else:
+        c_val = s_pol * r_scale
+
+    # Clamp minimum contrast and offset (S_apc)
+    p_out = APCA_CONSTANTS['clamps']['loClip']
+    # loBoWoffset and loWoBoffset are the same
+    w_offset = APCA_CONSTANTS['scalers']['loBoWoffset']
+
+    if abs(c_val) < p_out:
+        s_apc = 0.0
+    elif c_val > 0: # Positive contrast
+        s_apc = c_val - w_offset
+    else: # Negative contrast
+        s_apc = c_val + w_offset # Effectively c_val - (-w_offset) for negative C
+
+    # Calculate final Lc (Lightness contrast)
+    lc = s_apc * 100
+    return lc
+
+
 def calculate_contrast_ratio(hex_color1: str, hex_color2: str) -> float:
     """
-    Calculate the contrast ratio between two hex colors.
+    Calculate the APCA contrast value (Lc) between two hex colors.
+    This function now serves as an entry point for APCA calculation,
+    replacing the previous WCAG contrast ratio logic.
 
     Args:
-        hex_color1: The first hex color string (e.g., "#RRGGBB").
-        hex_color2: The second hex color string (e.g., "#RRGGBB").
+        hex_color1: The foreground hex color string (e.g., "#RRGGBB").
+        hex_color2: The background hex color string (e.g., "#RRGGBB").
 
     Returns:
-        The contrast ratio.
+        The APCA Lc value.
     """
-
-    def get_relative_luminance(hex_color: str) -> float:
-        """
-        Calculate the relative luminance of a hex color.
-
-        Args:
-            hex_color: The hex color string (e.g., "#RRGGBB").
-
-        Returns:
-            The relative luminance.
-        """
-        # Remove # if present
-        if hex_color.startswith("#"):
-            hex_color = hex_color[1:]
-
-        # Convert hex to RGB
-        r = int(hex_color[0:2], 16)
-        g = int(hex_color[2:4], 16)
-        b = int(hex_color[4:6], 16)
-
-        # Convert RGB to sRGB
-        srgb_r = r / 255.0
-        srgb_g = g / 255.0
-        srgb_b = b / 255.0
-
-        # Apply gamma correction
-        def adjust_channel(val):
-            if val <= 0.03928:
-                return val / 12.92
-            else:
-                return ((val + 0.055) / 1.055) ** 2.4
-
-        r_lum = adjust_channel(srgb_r)
-        g_lum = adjust_channel(srgb_g)
-        b_lum = adjust_channel(srgb_b)
-
-        # Calculate relative luminance
-        luminance = 0.2126 * r_lum + 0.7152 * g_lum + 0.0722 * b_lum
-        return luminance
-
-    lum1 = get_relative_luminance(hex_color1)
-    lum2 = get_relative_luminance(hex_color2)
-
-    # Determine L1 (lighter) and L2 (darker)
-    l1 = max(lum1, lum2)
-    l2 = min(lum1, lum2)
-
-    # Calculate contrast ratio
-    contrast_ratio = (l1 + 0.05) / (l2 + 0.05)
-    return contrast_ratio
+    # The APCA calculation is directional (foreground vs background matters).
+    # We assume hex_color1 is foreground and hex_color2 is background.
+    # If the original usage of calculate_contrast_ratio was for any two colors
+    # without specific fg/bg designation, this change makes it directional.
+    # The quality gate code seems to use it as text_color vs background_color,
+    # so this should align.
+    return calculate_apca_contrast_value(hex_color1, hex_color2)
 
 
 class Reviewer:
@@ -479,14 +542,19 @@ Provide 3-5 specific, actionable feedback items focused on improving the present
             violations.append(f"Overall score {overall_score} is below minimum threshold of {gates.min_overall_score}")
             recommendations.append("Address critical and high severity feedback to improve overall score")
 
-        # 5. Contrast Ratio Check
+        # 5. Contrast Ratio Check (Now APCA Lc Value Check)
         # CRITICAL ASSUMPTION: self.template_style (TemplateStyle) is available on this Reviewer instance.
         # This is not currently handled by __init__ and needs to be addressed separately.
         # Also, this check simplifies by only considering a 'body' placeholder and its fill vs text/master font.
         # A full check would need to iterate all text elements on a slide and their actual backgrounds.
         contrast_violations = []
-        all_ratios = []
-        min_contrast_ratio_aa = 4.5  # WCAG AA for normal text
+        all_lc_values = [] # Changed from all_ratios
+        # APCA Recommended Levels (example for reference, actual interpretation may vary):
+        # 60 Lc: Minimum for body text.
+        # 75 Lc: Preferred for body text.
+        # 45 Lc: Minimum for large text (e.g., headlines).
+        # For this quality gate, we use a configurable threshold.
+        apca_lc_threshold_pass = gates.min_apca_lc_for_body_text # Assuming this will be added to QualityGates model
 
         if hasattr(self, 'template_style') and self.template_style is not None:
             placeholder_type_body = 2  # Assuming BODY placeholder type index for main content
@@ -519,36 +587,45 @@ Provide 3-5 specific, actionable feedback items focused on improving the present
 
                 if text_color_hex and background_color_hex:
                     try:
-                        ratio = calculate_contrast_ratio(text_color_hex, background_color_hex)
-                        all_ratios.append(ratio)
+                        # calculate_contrast_ratio now returns APCA Lc value
+                        lc_value = calculate_contrast_ratio(text_color_hex, background_color_hex)
+                        all_lc_values.append(lc_value)
 
-                        if ratio < min_contrast_ratio_aa:
+                        # APCA Lc values can be negative. Higher absolute values are generally better.
+                        # We check if the absolute Lc value meets the threshold.
+                        if abs(lc_value) < apca_lc_threshold_pass:
                             violation_message = (
-                                f"Slide {slide.index + 1} (Body Placeholder): Poor contrast ratio {ratio:.2f} "
+                                f"Slide {slide.index + 1} (Body Placeholder): APCA Lc is {lc_value:.2f} "
                                 f"(Text: {text_color_hex}, Background: {background_color_hex}). "
-                                f"Minimum AA is {min_contrast_ratio_aa}."
+                                f"Recommended minimum absolute Lc is {apca_lc_threshold_pass} for body text readability."
                             )
                             violations.append(violation_message)
                             contrast_violations.append(slide.index)
                     except Exception as e:
-                        logger.warning(f"Could not calculate contrast ratio for slide {slide.index + 1}: {e}")
+                        logger.warning(f"Could not calculate APCA contrast for slide {slide.index + 1}: {e}")
                 else:
-                    logger.warning(f"Could not determine text/background color for contrast check on slide {slide.index + 1}.")
+                    logger.warning(f"Could not determine text/background color for APCA contrast check on slide {slide.index + 1}.")
 
             gate_results["contrast_check"] = len(contrast_violations) == 0
-            if all_ratios:
-                metrics["min_contrast_ratio_found"] = min(all_ratios)
-                metrics["avg_contrast_ratio"] = sum(all_ratios) / len(all_ratios)
-                metrics["max_contrast_ratio_found"] = max(all_ratios)
-            else:
-                metrics["min_contrast_ratio_found"] = 0.0
-                metrics["avg_contrast_ratio"] = 0.0
-                metrics["max_contrast_ratio_found"] = 0.0
+            if all_lc_values:
+                metrics["min_apca_lc_found"] = min(all_lc_values) if all_lc_values else 0.0
+                metrics["max_apca_lc_found"] = max(all_lc_values) if all_lc_values else 0.0
+                metrics["avg_apca_lc_found"] = sum(all_lc_values) / len(all_lc_values) if all_lc_values else 0.0
+
+                abs_lc_values = [abs(lc) for lc in all_lc_values]
+                metrics["min_abs_apca_lc_found"] = min(abs_lc_values) if abs_lc_values else 0.0
+                metrics["avg_abs_apca_lc_found"] = sum(abs_lc_values) / len(abs_lc_values) if abs_lc_values else 0.0
+            else: # Default if no Lc values calculated
+                metrics["min_apca_lc_found"] = 0.0
+                metrics["max_apca_lc_found"] = 0.0
+                metrics["avg_apca_lc_found"] = 0.0
+                metrics["min_abs_apca_lc_found"] = 0.0
+                metrics["avg_abs_apca_lc_found"] = 0.0
 
             if contrast_violations:
                 recommendations.append(
                     f"Improve text contrast on slides: {', '.join(str(i + 1) for i in sorted(list(set(contrast_violations))))}. "
-                    f"Ensure a minimum ratio of {min_contrast_ratio_aa}:1 for normal text against its background."
+                    f"Aim for an absolute APCA Lc value of {apca_lc_threshold_pass} or higher for body text."
                 )
         else:
             logger.warning("Skipping contrast ratio check: TemplateStyle not found on Reviewer instance.")

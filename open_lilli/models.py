@@ -491,7 +491,11 @@ class QualityGates(BaseModel):
     )
     min_contrast_ratio: float = Field(
         default=4.5,
-        description="Minimum acceptable contrast ratio for text (WCAG AA for normal text)"
+        description="DEPRECATED: Minimum acceptable contrast ratio for text (WCAG AA for normal text). Use min_apca_lc_for_body_text instead."
+    )
+    min_apca_lc_for_body_text: float = Field(
+        default=45.0,
+        description="Minimum acceptable absolute APCA Lc value for body text. Scores below this threshold are typically flagged."
     )
     
     class Config:
@@ -503,7 +507,8 @@ class QualityGates(BaseModel):
                 "max_readability_grade": 9.0,
                 "max_style_errors": 0,
                 "min_overall_score": 7.0,
-                "min_contrast_ratio": 4.5
+                "min_contrast_ratio": 4.5, # Kept for now for backward compatibility examples if any
+                "min_apca_lc_for_body_text": 45.0
             }
         }
 
@@ -565,12 +570,12 @@ class QualityGateResult(BaseModel):
                 "violations": [
                     "Slide 2 has readability grade 11.2 (exceeds limit of 9.0)",
                     "Overall score 6.5 is below minimum threshold of 7.0",
-                    "Slide 3 (Body Placeholder): Poor contrast ratio 3.10. Minimum AA is 4.5."
+                    "Slide 3 (Body Placeholder): APCA Lc is 35.0. Recommended minimum absolute Lc is 45.0 for body text."
                 ],
                 "recommendations": [
                     "Simplify language on Slide 2 to improve readability",
                     "Address critical and high severity feedback to improve overall score",
-                    "Improve text contrast on Slide 3 for better accessibility."
+                    "Improve text contrast on Slide 3 for better accessibility. Aim for absolute APCA Lc of 45.0 or higher."
                 ],
                 "metrics": {
                     "max_bullets_found": 5,
@@ -578,9 +583,11 @@ class QualityGateResult(BaseModel):
                     "max_readability_grade": 11.2,
                     "style_error_count": 0,
                     "overall_score": 6.5,
-                    "min_contrast_ratio_found": 3.1,
-                    "avg_contrast_ratio": 5.5,
-                    "max_contrast_ratio_found": 7.0
+                    "min_apca_lc_found": -20.5, # Example value, can be negative
+                    "avg_apca_lc_found": 45.0,  # Example value
+                    "max_apca_lc_found": 75.8,  # Example value
+                    "min_abs_apca_lc_found": 20.5, # Example value
+                    "avg_abs_apca_lc_found": 50.0   # Example value
                 }
             }
         }

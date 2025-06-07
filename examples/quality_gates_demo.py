@@ -35,11 +35,13 @@ class ReviewFeedback:
 
 class QualityGates:
     def __init__(self, max_bullets_per_slide=7, max_readability_grade=9.0, 
-                 max_style_errors=0, min_overall_score=7.0):
+                 max_style_errors=0, min_overall_score=7.0,
+                 min_apca_lc_for_body_text: float = 45.0): # Added APCA
         self.max_bullets_per_slide = max_bullets_per_slide
         self.max_readability_grade = max_readability_grade
         self.max_style_errors = max_style_errors
         self.min_overall_score = min_overall_score
+        self.min_apca_lc_for_body_text = min_apca_lc_for_body_text # Store APCA threshold
 
 class QualityGateResult:
     def __init__(self, status, gate_results, violations, recommendations, metrics):
@@ -170,6 +172,7 @@ def demonstrate_quality_gates():
     print(f"   • Max readability grade: {default_gates.max_readability_grade}")
     print(f"   • Max style errors: {default_gates.max_style_errors}")
     print(f"   • Min overall score: {default_gates.min_overall_score}")
+    print(f"   • Min APCA Lc for Body Text: {default_gates.min_apca_lc_for_body_text}") # Added APCA line
     print()
     
     # This would be the actual usage with a real reviewer:
@@ -208,6 +211,13 @@ def demonstrate_quality_gates():
     style_errors = sum(1 for fb in feedback if fb.category in ["design", "consistency"])
     print(f"   Style Errors Gate: {style_errors} errors found - {'FAIL' if style_errors > 0 else 'PASS'}")
     print()
+
+    # APCA Contrast Gate
+    print("   APCA Contrast Gate:")
+    print("     (Assumes specific text/background colors for slides if Reviewer had TemplateStyle)")
+    print("     Slide 2 (e.g. Black text #000000 on White #FFFFFF): High Lc value (e.g., ~106) - PASS (abs(Lc) >= 45)")
+    print("     Slide with (e.g. Grey text #777777 on White #FFFFFF): Lc value (e.g., ~44) - FAIL (abs(Lc) < 45)")
+    print()
     
     # Overall assessment
     print("   Expected Overall Result: NEEDS_FIX")
@@ -223,7 +233,8 @@ def demonstrate_quality_gates():
         max_bullets_per_slide=5,      # Stricter bullet limit
         max_readability_grade=7.0,    # Simpler language required
         max_style_errors=0,           # No style errors allowed
-        min_overall_score=8.0         # Higher quality threshold
+        min_overall_score=8.0,        # Higher quality threshold
+        min_apca_lc_for_body_text=60.0 # Custom APCA threshold
     )
     
     print("   Strict Configuration:")
@@ -231,6 +242,7 @@ def demonstrate_quality_gates():
     print(f"     • Max readability grade: {strict_gates.max_readability_grade}")
     print(f"     • Max style errors: {strict_gates.max_style_errors}")
     print(f"     • Min overall score: {strict_gates.min_overall_score}")
+    print(f"     • Min APCA Lc for Body Text: {strict_gates.min_apca_lc_for_body_text}") # Added APCA line
     print()
     
     print("   With strict gates, even more slides would fail:")
@@ -247,24 +259,30 @@ def demonstrate_quality_gates():
             "bullet_count": False,
             "readability": False,
             "style_errors": False,
-            "overall_score": True
+            "overall_score": True,
+            "contrast_check": False # Added APCA contrast check
         },
         violations=[
             "Slide 3 has 8 bullets (exceeds limit of 7)",
             "Slide 3 has readability grade 12.4 (exceeds limit of 9.0)",
-            "Found 2 style errors (exceeds limit of 0)"
+            "Found 2 style errors (exceeds limit of 0)",
+            "Slide 2 (Body Placeholder): APCA Lc is 35.50 (Text: #AAAAAA, Background: #FFFFFF). Minimum absolute Lc is 45.0." # Example APCA violation
         ],
         recommendations=[
             "Reduce bullet points on slide 3 to 7 or fewer",
             "Simplify language on slide 3 to improve readability",
-            "Address style and consistency issues identified in feedback"
+            "Address style and consistency issues identified in feedback",
+            "Improve text contrast on Slide 2. Ensure an absolute APCA Lc of at least 45.0 for body text." # Example APCA recommendation
         ],
         metrics={
             "max_bullets_found": 8,
             "avg_readability_grade": 8.2,
             "max_readability_grade": 12.4,
             "style_error_count": 2,
-            "overall_score": 7.5
+            "overall_score": 7.5,
+            "min_abs_apca_lc_found": 35.5, # Example APCA metric
+            "avg_abs_apca_lc_found": 55.0, # Example APCA metric
+            "max_apca_lc_found": 106.0    # Example APCA metric (can be > 100)
         }
     )
     
