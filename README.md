@@ -46,7 +46,13 @@ ai-ppt generate \
 
 ### Setup
 
+Running the test suite requires the development dependencies installed via
+`pip install -e .[dev]`.
+
 ```bash
+# Install dependencies for development and testing
+pip install -e .[dev]
+
 # Install pre-commit hooks
 pre-commit install
 
