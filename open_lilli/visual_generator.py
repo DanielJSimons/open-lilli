@@ -139,7 +139,7 @@ class VisualGenerator:
                             use_native_chart = True
                         elif explicitly_native_pending: # Dictionary explicitly asks for native
                             use_native_chart = True
-                        elif chart_type_str in ["bar", "line", "column"]: # It's a dict and type is bar/line/column
+                        elif chart_type_str in ["bar", "line", "column", "area", "doughnut"]: # It's a dict and type is bar/line/column/area/doughnut
                             use_native_chart = True
 
                     if use_native_chart:
@@ -207,6 +207,10 @@ class VisualGenerator:
                 return self._generate_bar_chart(slide)
             elif chart_type == "line":
                 return self._generate_line_chart(slide)
+            elif chart_type == "area":
+                return self._generate_area_chart(slide)
+            elif chart_type == "doughnut":
+                return self._generate_doughnut_chart(slide)
             elif chart_type == "pie":
                 return self._generate_pie_chart(slide)
             elif chart_type == "scatter":
@@ -259,6 +263,56 @@ class VisualGenerator:
                    facecolor='white', edgecolor='none')
         plt.close()
         
+        return output_path
+
+    def _generate_area_chart(self, slide: SlidePlan) -> Path:
+        """Generate an area chart."""
+        data = slide.chart_data
+
+        fig, ax = plt.subplots(figsize=(10, 6))
+
+        # Extract data
+        categories = data.get("categories", data.get("x", list(range(len(data.get("series", [{"values": [1,2,3]}])[0]["values"])))))
+        series = data.get("series", [{"name": "Series 1", "values": [1, 2, 3]}])
+
+        # Prepare data for stackplot
+        y_data = [s["values"] for s in series]
+        labels = [s.get("name", f"Series {i+1}") for i, s in enumerate(series)]
+
+        # Define colors, cycling through theme colors
+        available_colors = [
+            self.theme_colors["primary"],
+            self.theme_colors["secondary"],
+            self.theme_colors["accent1"],
+            self.theme_colors["accent2"],
+            self.theme_colors["accent3"]
+        ]
+        plot_colors = [available_colors[i % len(available_colors)] for i in range(len(series))]
+
+        # Create stackplot
+        ax.stackplot(categories, y_data, labels=labels, colors=plot_colors, alpha=0.7)
+
+        # Customize chart
+        title = data.get("title", slide.title)
+        ax.set_title(title, fontweight='bold', pad=20)
+        ax.set_xlabel(data.get("xlabel", ""))
+        ax.set_ylabel(data.get("ylabel", ""))
+
+        # Add legend if multiple series
+        if len(series) > 1:
+            ax.legend(loc='upper left')
+
+        # Style improvements
+        ax.grid(True, alpha=0.3)
+        plt.tight_layout()
+
+        # Save chart
+        filename = f"chart_slide_{slide.index}_area.png"
+        output_path = self.output_dir / filename
+        plt.savefig(output_path, dpi=300, bbox_inches='tight',
+                   facecolor='white', edgecolor='none')
+        plt.close()
+
         return output_path
 
     def _generate_line_chart(self, slide: SlidePlan) -> Path:
@@ -329,6 +383,58 @@ class VisualGenerator:
                    facecolor='white', edgecolor='none')
         plt.close()
         
+        return output_path
+
+    def _generate_doughnut_chart(self, slide: SlidePlan) -> Path:
+        """Generate a doughnut chart."""
+        data = slide.chart_data
+
+        fig, ax = plt.subplots(figsize=(8, 8))
+
+        # Extract data
+        labels = data.get("labels", data.get("categories", ["A", "B", "C"]))
+        values = data.get("values", data.get("y", [1, 2, 3]))
+
+        # Create pie chart with theme colors
+        colors = [
+            self.theme_colors["primary"],
+            self.theme_colors["secondary"],
+            self.theme_colors["accent1"],
+            self.theme_colors["accent2"],
+            self.theme_colors["accent3"]
+        ]
+        plot_colors = colors[:len(labels)]
+
+        wedges, texts, autotexts = ax.pie(
+            values,
+            labels=labels,
+            autopct='%1.1f%%',
+            colors=plot_colors,
+            startangle=90,
+            wedgeprops=dict(width=0.4) # This creates the doughnut hole, alternative to drawing a circle
+        )
+
+        # Customize chart
+        title = data.get("title", slide.title)
+        ax.set_title(title, fontweight='bold', pad=20)
+
+        # Style improvements
+        plt.setp(autotexts, size=10, weight="bold", color=self.theme_colors.get("text_light", "#FFFFFF")) # Make autopct text visible
+        ax.axis('equal')  # Equal aspect ratio ensures that pie is drawn as a circle.
+
+        # Add legend if specified or if there are many items
+        if data.get("legend", False) or len(labels) > 5:
+            ax.legend(wedges, labels, title="Categories", loc="center left", bbox_to_anchor=(1, 0, 0.5, 1))
+
+        plt.tight_layout()
+
+        # Save chart
+        filename = f"chart_slide_{slide.index}_doughnut.png"
+        output_path = self.output_dir / filename
+        plt.savefig(output_path, dpi=300, bbox_inches='tight',
+                   facecolor='white', edgecolor='none')
+        plt.close()
+
         return output_path
 
     def _generate_scatter_chart(self, slide: SlidePlan) -> Path:
