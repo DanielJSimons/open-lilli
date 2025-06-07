@@ -239,6 +239,7 @@ class PlaceholderStyleInfo(BaseModel):
         default_factory=list, 
         description="Bullet styles for different indentation levels"
     )
+    fill_color: Optional[str] = Field(None, description="Fill color of the placeholder shape, in hex format")
     
     class Config:
         """Pydantic configuration."""
@@ -264,7 +265,8 @@ class PlaceholderStyleInfo(BaseModel):
                         },
                         "indent_level": 0
                     }
-                ]
+                ],
+                "fill_color": "#FFFFFF"
             }
         }
 
@@ -424,7 +426,8 @@ class TemplateStyle(BaseModel):
                             "weight": "bold",
                             "color": "#1F497D"
                         },
-                        "bullet_styles": []
+                        "bullet_styles": [],
+                        "fill_color": "#EEEEEE"
                     },
                     2: {
                         "placeholder_type": 2,
@@ -446,7 +449,8 @@ class TemplateStyle(BaseModel):
                                 },
                                 "indent_level": 0
                             }
-                        ]
+                        ],
+                        "fill_color": "#FFFFFF"
                     }
                 },
                 "theme_fonts": {
@@ -481,6 +485,10 @@ class QualityGates(BaseModel):
         default=7.0,
         description="Minimum overall quality score required (0-10 scale)"
     )
+    min_contrast_ratio: float = Field(
+        default=4.5,
+        description="Minimum acceptable contrast ratio for text (WCAG AA for normal text)"
+    )
     
     class Config:
         """Pydantic configuration."""
@@ -490,7 +498,8 @@ class QualityGates(BaseModel):
                 "max_bullets_per_slide": 7,
                 "max_readability_grade": 9.0,
                 "max_style_errors": 0,
-                "min_overall_score": 7.0
+                "min_overall_score": 7.0,
+                "min_contrast_ratio": 4.5
             }
         }
 
@@ -504,7 +513,7 @@ class QualityGateResult(BaseModel):
     )
     gate_results: Dict[str, bool] = Field(
         ...,
-        description="Results for each individual quality gate (True = passed)"
+        description="Results for each individual quality gate (True = passed, e.g., 'bullet_count', 'readability', 'contrast_check')"
     )
     violations: List[str] = Field(
         default_factory=list,
@@ -516,7 +525,7 @@ class QualityGateResult(BaseModel):
     )
     metrics: Dict[str, float] = Field(
         default_factory=dict,
-        description="Quantitative metrics measured during evaluation"
+        description="Quantitative metrics measured (e.g., 'avg_readability_grade', 'min_contrast_ratio_found')"
     )
     
     @property
@@ -546,22 +555,28 @@ class QualityGateResult(BaseModel):
                     "bullet_count": True,
                     "readability": False,
                     "style_errors": True,
-                    "overall_score": False
+                    "overall_score": False,
+                    "contrast_check": False
                 },
                 "violations": [
                     "Slide 2 has readability grade 11.2 (exceeds limit of 9.0)",
-                    "Overall score 6.5 is below minimum threshold of 7.0"
+                    "Overall score 6.5 is below minimum threshold of 7.0",
+                    "Slide 3 (Body Placeholder): Poor contrast ratio 3.10. Minimum AA is 4.5."
                 ],
                 "recommendations": [
                     "Simplify language on Slide 2 to improve readability",
-                    "Address critical and high severity feedback to improve overall score"
+                    "Address critical and high severity feedback to improve overall score",
+                    "Improve text contrast on Slide 3 for better accessibility."
                 ],
                 "metrics": {
                     "max_bullets_found": 5,
                     "avg_readability_grade": 8.7,
                     "max_readability_grade": 11.2,
                     "style_error_count": 0,
-                    "overall_score": 6.5
+                    "overall_score": 6.5,
+                    "min_contrast_ratio_found": 3.1,
+                    "avg_contrast_ratio": 5.5,
+                    "max_contrast_ratio_found": 7.0
                 }
             }
         }

@@ -9,6 +9,7 @@ from typing import Dict, List, Optional, Tuple
 from pptx import Presentation
 from pptx.slide import SlideLayout
 from pptx.enum.shapes import MSO_SHAPE_TYPE
+from pptx.enum.dml import MSO_FILL_TYPE
 
 from .models import TemplateStyle, FontInfo, BulletInfo, PlaceholderStyleInfo
 
@@ -631,14 +632,21 @@ class TemplateParser:
                 # Extract font information for this placeholder
                 font_info = self._extract_placeholder_font(placeholder)
                 
+                # Extract font information for this placeholder
+                font_info = self._extract_placeholder_font(placeholder)
+
                 # Extract bullet styles for this placeholder
                 bullet_styles = self._extract_placeholder_bullets(placeholder)
                 
+                # Extract fill color for this placeholder
+                fill_color = self._extract_placeholder_fill_color(placeholder)
+
                 styles[ph_type] = PlaceholderStyleInfo(
                     placeholder_type=ph_type,
                     type_name=type_name,
                     default_font=font_info,
-                    bullet_styles=bullet_styles
+                    bullet_styles=bullet_styles,
+                    fill_color=fill_color
                 )
                 
             except Exception as e:
@@ -698,6 +706,25 @@ class TemplateParser:
         except Exception as e:
             logger.debug(f"Could not extract placeholder font: {e}")
         
+        return None
+
+    def _extract_placeholder_fill_color(self, placeholder) -> Optional[str]:
+        """
+        Extract fill color from a placeholder shape if it's a solid fill.
+
+        Args:
+            placeholder: Placeholder shape to analyze
+
+        Returns:
+            Hex color string (e.g., "#RRGGBB") or None if not a solid fill or error.
+        """
+        try:
+            if hasattr(placeholder, 'fill') and placeholder.fill.type == MSO_FILL_TYPE.SOLID:
+                if hasattr(placeholder.fill.fore_color, 'rgb'):
+                    rgb = placeholder.fill.fore_color.rgb
+                    return f"#{str(rgb).upper()}"
+        except Exception as e:
+            logger.debug(f"Could not extract placeholder fill color: {e}")
         return None
 
     def _extract_placeholder_bullets(self, placeholder) -> List[BulletInfo]:
