@@ -33,16 +33,37 @@ load_dotenv()
 console = Console()
 
 
+def _configure_logging(debug: bool, log_file: Optional[Path]):
+    """Configure root logging handlers and level."""
+    import logging
+
+    handlers = [logging.StreamHandler()]
+    if log_file:
+        handlers.append(logging.FileHandler(log_file, mode="w"))
+
+    logging.basicConfig(
+        level=logging.DEBUG if debug else logging.INFO,
+        format="%(asctime)s - %(levelname)s - %(message)s",
+        handlers=handlers,
+    )
+
+
 @click.group()
 @click.version_option(version=__version__)
-def cli():
+@click.option("--debug", is_flag=True, help="Show stack traces on error")
+@click.option("--log-file", type=click.Path(path_type=Path), help="Write debug logs to file")
+@click.pass_context
+def cli(ctx: click.Context, debug: bool, log_file: Optional[Path]):
     """
     Open Lilli - AI-powered PowerPoint generation tool.
-    
+
     Generate professional presentations from text using AI and templates.
     """
-    pass
+    _configure_logging(debug, log_file)
+    ctx.ensure_object(dict)
+    ctx.obj["debug"] = debug
 
+    ctx.obj["log_file"] = log_file
 
 @cli.command()
 @click.option(
@@ -134,7 +155,8 @@ def cli():
     is_flag=True,
     help="Enable verbose output"
 )
-def generate(
+@click.pass_context
+def generate(ctx: click.Context, 
     template: Path,
     input_path: Path,
     output: Path,
@@ -153,17 +175,17 @@ def generate(
     verbose: bool
 ):
     """Generate a PowerPoint presentation from input content."""
-    
-    # Set up logging level
+
+    debug = ctx.obj.get("debug", False)
     if verbose:
         import logging
-        logging.basicConfig(level=logging.DEBUG)
+        logging.getLogger().setLevel(logging.DEBUG)
     
     # Check for API key
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
         console.print("[red]Error: OPENAI_API_KEY environment variable not set[/red]")
-        console.print("Please set your OpenAI API key in the .env file or environment")
+        console.print("Hint: run 'open-lilli setup' or set OPENAI_API_KEY in your environment")
         sys.exit(1)
     
     # Initialize OpenAI client
@@ -171,6 +193,7 @@ def generate(
         openai_client = AsyncOpenAI(api_key=api_key) if async_mode else OpenAI(api_key=api_key)
     except Exception as e:
         console.print(f"[red]Error initializing OpenAI client: {e}[/red]")
+        console.print("Hint: verify your API key and network connection")
         sys.exit(1)
     
     # Create assets directory
@@ -417,9 +440,11 @@ def generate(
         except Exception as e:
             progress.stop()
             console.print(f"[red]❌ Error during generation: {e}[/red]")
-            if verbose:
+            if verbose or debug:
                 import traceback
                 console.print(traceback.format_exc())
+            else:
+                console.print("Run again with --debug or --log-file for details")
             sys.exit(1)
     
     # Display results summary
@@ -545,7 +570,8 @@ def generate(
     is_flag=True,
     help="Enable verbose output"
 )
-def regenerate(
+@click.pass_context
+def regenerate(ctx: click.Context,
     template: Path,
     input_pptx: Path,
     slides: str,
@@ -561,17 +587,17 @@ def regenerate(
     verbose: bool
 ):
     """Regenerate specific slides in an existing PowerPoint presentation."""
-    
-    # Set up logging level
+
+    debug = ctx.obj.get("debug", False)
     if verbose:
         import logging
-        logging.basicConfig(level=logging.DEBUG)
+        logging.getLogger().setLevel(logging.DEBUG)
     
     # Check for API key
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
         console.print("[red]Error: OPENAI_API_KEY environment variable not set[/red]")
-        console.print("Please set your OpenAI API key in the .env file or environment")
+        console.print("Hint: run 'open-lilli setup' or set OPENAI_API_KEY in your environment")
         sys.exit(1)
     
     # Parse slide indices
@@ -579,6 +605,7 @@ def regenerate(
         target_indices = [int(idx.strip()) for idx in slides.split(",")]
     except ValueError:
         console.print("[red]Error: Invalid slide indices format. Use comma-separated numbers (e.g., '1,3,5')[/red]")
+        console.print("Hint: provide indices without spaces or brackets")
         sys.exit(1)
     
     # Initialize OpenAI client
@@ -586,6 +613,7 @@ def regenerate(
         openai_client = OpenAI(api_key=api_key)
     except Exception as e:
         console.print(f"[red]Error initializing OpenAI client: {e}[/red]")
+        console.print("Hint: verify your API key and network connection")
         sys.exit(1)
     
     # Create assets directory
@@ -643,6 +671,7 @@ def regenerate(
             except ValueError as e:
                 progress.remove_task(task)
                 console.print(f"[red]❌ {e}[/red]")
+                console.print("Hint: ensure slide indices exist in the presentation")
                 sys.exit(1)
             progress.remove_task(task)
             
@@ -681,9 +710,11 @@ def regenerate(
         except Exception as e:
             progress.stop()
             console.print(f"[red]❌ Error during regeneration: {e}[/red]")
-            if verbose:
+            if verbose or debug:
                 import traceback
                 console.print(traceback.format_exc())
+            else:
+                console.print("Run again with --debug or --log-file for details")
             sys.exit(1)
     
     # Display results summary
@@ -706,8 +737,9 @@ def regenerate(
 
 
 @cli.command()
+@click.pass_context
 @click.argument("template_path", type=click.Path(exists=True, path_type=Path))
-def analyze_template(template_path: Path):
+def analyze_template(ctx: click.Context, template_path: Path):
     """Analyze a PowerPoint template and show layout information."""
     
     console.print(f"[bold]Analyzing template: {template_path}[/bold]\n")
@@ -745,6 +777,11 @@ def analyze_template(template_path: Path):
         
     except Exception as e:
         console.print(f"[red]Error analyzing template: {e}[/red]")
+        if ctx.obj.get("debug", False):
+            import traceback
+            console.print(traceback.format_exc())
+        else:
+            console.print("Run again with --debug or --log-file for details")
         sys.exit(1)
 
 
@@ -858,7 +895,8 @@ LOG_LEVEL=INFO
     is_flag=True,
     help="Enable verbose output"
 )
-def ingest(
+@click.pass_context
+def ingest(ctx: click.Context,
     pptx: Path,
     template: Optional[Path],
     vector_store: Path,
@@ -867,17 +905,17 @@ def ingest(
     verbose: bool
 ):
     """Ingest PowerPoint presentations into the ML training corpus."""
-    
-    # Set up logging level
+
+    debug = ctx.obj.get("debug", False)
     if verbose:
         import logging
-        logging.basicConfig(level=logging.DEBUG)
+        logging.getLogger().setLevel(logging.DEBUG)
     
     # Check for API key
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
         console.print("[red]Error: OPENAI_API_KEY environment variable not set[/red]")
-        console.print("Please set your OpenAI API key in the .env file or environment")
+        console.print("Hint: run 'open-lilli setup' or set OPENAI_API_KEY in your environment")
         sys.exit(1)
     
     # Initialize OpenAI client
@@ -885,6 +923,7 @@ def ingest(
         openai_client = OpenAI(api_key=api_key)
     except Exception as e:
         console.print(f"[red]Error initializing OpenAI client: {e}[/red]")
+        console.print("Hint: verify your API key and network connection")
         sys.exit(1)
     
     # Create vector store configuration
@@ -932,14 +971,17 @@ def ingest(
                 
             else:
                 console.print(f"[red]Error: {pptx} is neither a file nor directory[/red]")
+                console.print("Hint: check the path and try again")
                 sys.exit(1)
             
         except Exception as e:
             progress.stop()
             console.print(f"[red]❌ Error during ingestion: {e}[/red]")
-            if verbose:
+            if verbose or debug:
                 import traceback
                 console.print(traceback.format_exc())
+            else:
+                console.print("Run again with --debug or --log-file for details")
             sys.exit(1)
     
     # Display results summary
