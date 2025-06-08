@@ -2,11 +2,12 @@
 
 import tempfile
 from pathlib import Path
+from unittest.mock import Mock, patch, MagicMock, call, ANY, mock_open  # ensure 'call' and 'ANY' is imported
 import unittest
-from unittest.mock import Mock, patch, MagicMock, call, ANY  # ensure 'call' and 'ANY' is imported
 
 import pytest
 from PIL import Image
+import openai
 
 from open_lilli.models import SlidePlan, VisualExcellenceConfig, NativeChartData, ChartType, AssetLibraryConfig # Add AssetLibraryConfig
 from open_lilli.visual_generator import VisualGenerator
