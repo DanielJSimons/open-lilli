@@ -147,7 +147,7 @@ ai-ppt generate [OPTIONS]
 
 **Performance:**
 - `--async`: Use async processing for speed
-- `--model`: OpenAI model (default: gpt-4)
+ - `--model`: OpenAI model (default: gpt-4.1)
 - `--verbose, -v`: Detailed output
 
 **Example:**
@@ -312,7 +312,7 @@ Create a `.env` file in your project directory:
 ```bash
 # OpenAI Configuration
 OPENAI_API_KEY=your_openai_api_key_here
-OPENAI_MODEL=gpt-4
+OPENAI_MODEL=gpt-4.1
 OPENAI_TEMPERATURE=0.3
 
 # Image Generation

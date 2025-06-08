@@ -29,7 +29,7 @@ class TestVisualProofreader:
         """Create a VisualProofreader instance with mocked client."""
         return VisualProofreader(
             client=mock_openai_client,
-            model="gpt-4",
+            model="gpt-4.1",
             temperature=0.1
         )
     
@@ -273,7 +273,7 @@ class TestVisualProofreader:
         assert result.total_slides == 3
         assert len(result.issues_found) == 3
         assert result.processing_time_seconds == 2.5
-        assert result.model_used == "gpt-4"
+        assert result.model_used == "gpt-4.1"
         
         # Check issue count by type
         issue_counts = result.issue_count_by_type
@@ -357,7 +357,7 @@ class TestVisualProofreader:
                 # Missing bullet detection (false negative)
             ],
             processing_time_seconds=1.0,
-            model_used="gpt-4"
+            model_used="gpt-4.1"
         )
         
         proofreader.proofread_slides = Mock(return_value=mock_result)
@@ -502,7 +502,7 @@ class TestVisualProofreader:
             total_slides=2,
             issues_found=issues,
             processing_time_seconds=3.0,
-            model_used="gpt-4"
+            model_used="gpt-4.1"
         )
         
         # Test issue count by type
@@ -565,7 +565,7 @@ class TestCapitalizationDetection:
             )
         ]
         
-        proofreader = VisualProofreader(Mock(), "gpt-4")
+        proofreader = VisualProofreader(Mock(), "gpt-4.1")
         
         modified_slides, seeded_errors = proofreader.generate_test_slides_with_errors(
             base_slides,
@@ -585,7 +585,7 @@ class TestCapitalizationDetection:
         """Simulate the 90% detection rate mentioned in T-79."""
         # Create a proofreader with mocked LLM
         client = Mock()
-        proofreader = VisualProofreader(client, "gpt-4")
+        proofreader = VisualProofreader(client, "gpt-4.1")
         
         # Create 10 seeded errors
         seeded_errors = [
@@ -613,7 +613,7 @@ class TestCapitalizationDetection:
             total_slides=5,
             issues_found=detected_issues,
             processing_time_seconds=2.0,
-            model_used="gpt-4"
+            model_used="gpt-4.1"
         )
         
         proofreader.proofread_slides = Mock(return_value=mock_result)

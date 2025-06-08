@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 class OutlineGenerator:
     """Generates structured presentation outlines using OpenAI models."""
 
-    def __init__(self, client: OpenAI | AsyncOpenAI, model: str = "gpt-4", temperature: float = 0.3):
+    def __init__(self, client: OpenAI | AsyncOpenAI, model: str = "gpt-4.1", temperature: float = 0.3):
         """
         Initialize the outline generator.
 
@@ -270,6 +270,7 @@ Generate the outline now:"""
             "gpt-4-turbo",
             "gpt-4o",
             "gpt-4o-mini",
+            "gpt-4.1",
             "gpt-3.5-turbo",
             "gpt-3.5-turbo-1106",
             "gpt-3.5-turbo-0125",

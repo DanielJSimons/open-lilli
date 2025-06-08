@@ -31,7 +31,7 @@ class TestContentGenerator:
     def test_init(self):
         """Test ContentGenerator initialization."""
         assert self.generator.client == self.mock_client
-        assert self.generator.model == "gpt-4"
+        assert self.generator.model == "gpt-4.1"
         assert self.generator.temperature == 0.3
 
     def test_generate_content_success(self):
