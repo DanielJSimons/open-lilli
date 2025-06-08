@@ -438,7 +438,7 @@ class SlideAssembler:
             # Try to find subtitle placeholder
             subtitle_placeholder = None
             for placeholder in slide.placeholders:
-                if placeholder.placeholder_format.type == 3:  # SUBTITLE
+                if placeholder.placeholder_format.type == PP_PLACEHOLDER.SUBTITLE:  # SUBTITLE
                     subtitle_placeholder = placeholder
                     break
             
@@ -473,7 +473,7 @@ class SlideAssembler:
             
             for placeholder in slide.placeholders:
                 ph_type = placeholder.placeholder_format.type
-                if ph_type in (2, 7):  # BODY or OBJECT
+                if ph_type in (PP_PLACEHOLDER.BODY, PP_PLACEHOLDER.OBJECT):  # BODY or OBJECT
                     body_placeholders.append(placeholder)
             
             if not body_placeholders:
@@ -519,7 +519,7 @@ class SlideAssembler:
             
             for placeholder in slide.placeholders:
                 ph_type = placeholder.placeholder_format.type
-                if ph_type in (2, 7):  # BODY or OBJECT
+                if ph_type in (PP_PLACEHOLDER.BODY, PP_PLACEHOLDER.OBJECT):  # BODY or OBJECT
                     body_placeholders.append(placeholder)
             
             if not body_placeholders:
@@ -659,94 +659,122 @@ class SlideAssembler:
                 if para.text and para.text.strip(): # Only align if paragraph has text
                     para.alignment = PP_ALIGN.RIGHT
 
+    def find_placeholder(self, slide, placeholder_type: int) -> Optional[object]:
+        """Find a placeholder of the specified type on the slide.
+        
+        Args:
+            slide: PowerPoint slide object
+            placeholder_type: PP_PLACEHOLDER constant (e.g., PP_PLACEHOLDER.PICTURE)
+            
+        Returns:
+            Placeholder object if found, None otherwise
+        """
+        try:
+            for placeholder in slide.placeholders:
+                if (hasattr(placeholder, 'placeholder_format') and 
+                    placeholder.placeholder_format.type == placeholder_type):
+                    return placeholder
+        except Exception as e:
+            logger.debug(f"Error finding placeholder type {placeholder_type}: {e}")
+        
+        return None
+    
+    def _fallback_add_picture(self, slide, image_path: str, position: str = "bottom_right", 
+                             width: float = 4.0, height: float = 3.0, alt_text: Optional[str] = None) -> Optional[object]:
+        """Consolidated fallback logic for adding pictures when no placeholder is available.
+        
+        Args:
+            slide: PowerPoint slide object
+            image_path: Path to the image file
+            position: Position on slide ("bottom_right", "top_right", "center")
+            width: Image width in inches
+            height: Image height in inches
+            alt_text: Alternative text for accessibility
+            
+        Returns:
+            Picture shape object if successful, None otherwise
+        """
+        try:
+            # Get slide dimensions
+            try:
+                prs = slide.part.package.presentation_part.presentation
+                slide_width = prs.slide_width
+                slide_height = prs.slide_height
+            except AttributeError:
+                # Fallback to default dimensions if access fails
+                slide_width = Inches(10)  # Standard slide width
+                slide_height = Inches(7.5)  # Standard slide height
+            
+            img_width = Inches(width)
+            img_height = Inches(height)
+            margin = Inches(0.5)
+            
+            # Calculate position based on position parameter
+            if position == "bottom_right":
+                left = slide_width - img_width - margin
+                top = slide_height - img_height - margin
+            elif position == "top_right":
+                left = slide_width - img_width - margin
+                top = Inches(1)
+            elif position == "center":
+                left = (slide_width - img_width) / 2
+                top = (slide_height - img_height) / 2
+            else:
+                # Default to bottom_right
+                left = slide_width - img_width - margin
+                top = slide_height - img_height - margin
+            
+            picture_shape = slide.shapes.add_picture(str(image_path), left, top, img_width, img_height)
+            if alt_text:
+                picture_shape.name = alt_text
+            
+            logger.debug(f"Added picture as floating image at {position}: {image_path}")
+            return picture_shape
+            
+        except Exception as e:
+            logger.error(f"Failed to add fallback picture '{image_path}': {e}")
+            return None
+    
     def _add_chart_image(self, slide, chart_path: str, alt_text: Optional[str] = None) -> None:
-        """Add chart image to slide."""
+        """Add chart image to slide using placeholder-first approach."""
         try:
             chart_path = Path(chart_path)
             if not chart_path.exists():
                 logger.error(f"Chart file not found: {chart_path}")
                 return
             
-            # Try to find picture placeholder first
-            picture_placeholder = None
-            for placeholder in slide.placeholders:
-                if placeholder.placeholder_format.type == 18:  # PICTURE
-                    picture_placeholder = placeholder
-                    break
-            
-            if picture_placeholder:
-                # Use placeholder
-                picture_shape = picture_placeholder.insert_picture(str(chart_path))
+            # Use consolidated placeholder finding
+            ph = self.find_placeholder(slide, PP_PLACEHOLDER.PICTURE)
+            if ph:
+                picture_shape = ph.insert_picture(str(chart_path))
                 if alt_text:
                     picture_shape.name = alt_text
                 logger.debug(f"Inserted chart into picture placeholder: {chart_path}")
             else:
-                # Add as free-floating image
-                # Position in bottom right area
-                try:
-                    # Try the more direct approach first
-                    prs = slide.part.package.presentation_part.presentation
-                    slide_width = prs.slide_width
-                    slide_height = prs.slide_height
-                except AttributeError:
-                    # Fallback to default dimensions if access fails
-                    slide_width = Inches(10)  # Standard slide width
-                    slide_height = Inches(7.5)  # Standard slide height
-                
-                img_width = Inches(4)
-                img_height = Inches(3)
-                left = slide_width - img_width - Inches(0.5)
-                top = slide_height - img_height - Inches(0.5)
-                
-                picture_shape = slide.shapes.add_picture(str(chart_path), left, top, img_width, img_height)
-                if alt_text:
-                    picture_shape.name = alt_text
-                logger.debug(f"Added chart as floating image: {chart_path}")
+                # Use consolidated fallback logic
+                self._fallback_add_picture(slide, str(chart_path), "bottom_right", 4.0, 3.0, alt_text)
                 
         except Exception as e:
             logger.error(f"Failed to add chart image '{chart_path}': {e}")
 
     def _add_image(self, slide, image_path: str, alt_text: Optional[str] = None) -> None:
-        """Add image to slide."""
+        """Add image to slide using placeholder-first approach."""
         try:
             image_path = Path(image_path)
             if not image_path.exists():
                 logger.error(f"Image file not found: {image_path}")
                 return
             
-            # Try to find picture placeholder first
-            picture_placeholder = None
-            for placeholder in slide.placeholders:
-                if placeholder.placeholder_format.type == 18:  # PICTURE
-                    picture_placeholder = placeholder
-                    break
-            
-            if picture_placeholder:
-                # Use placeholder
-                picture_shape = picture_placeholder.insert_picture(str(image_path))
+            # Use consolidated placeholder finding
+            ph = self.find_placeholder(slide, PP_PLACEHOLDER.PICTURE)
+            if ph:
+                picture_shape = ph.insert_picture(str(image_path))
                 if alt_text:
                     picture_shape.name = alt_text
                 logger.debug(f"Inserted image into picture placeholder: {image_path}")
             else:
-                # Add as free-floating image
-                # Position in upper right area if no chart is present
-                try:
-                    # Try the more direct approach first
-                    prs = slide.part.package.presentation_part.presentation
-                    slide_width = prs.slide_width
-                except AttributeError:
-                    # Fallback to default dimensions if access fails
-                    slide_width = Inches(10)  # Standard slide width
-                
-                img_width = Inches(3)
-                img_height = Inches(2)
-                left = slide_width - img_width - Inches(0.5)
-                top = Inches(1)
-                
-                picture_shape = slide.shapes.add_picture(str(image_path), left, top, img_width, img_height)
-                if alt_text:
-                    picture_shape.name = alt_text
-                logger.debug(f"Added image as floating image: {image_path}")
+                # Use consolidated fallback logic
+                self._fallback_add_picture(slide, str(image_path), "top_right", 3.0, 2.0, alt_text)
                 
         except Exception as e:
             logger.error(f"Failed to add image '{image_path}': {e}")
@@ -803,19 +831,15 @@ class SlideAssembler:
 
     def _find_chart_placeholder(self, slide) -> Optional[object]:
         """Find a chart placeholder on the slide."""
-        try:
-            for placeholder in slide.placeholders:
-                if (hasattr(placeholder, 'placeholder_format') and 
-                    placeholder.placeholder_format.type == 12):  # CHART placeholder
-                    return placeholder
-                
-                # Check for content placeholder that can hold charts
-                if (hasattr(placeholder, 'placeholder_format') and 
-                    placeholder.placeholder_format.type in [7]):  # OBJECT
-                    return placeholder
-            
-        except Exception as e:
-            logger.debug(f"Error finding chart placeholder: {e}")
+        # Try chart placeholder first (type 12)
+        chart_ph = self.find_placeholder(slide, 12)  # CHART placeholder (no PP_PLACEHOLDER.CHART constant available)
+        if chart_ph:
+            return chart_ph
+        
+        # Fallback to object placeholder that can hold charts
+        object_ph = self.find_placeholder(slide, PP_PLACEHOLDER.OBJECT)
+        if object_ph:
+            return object_ph
         
         return None
 

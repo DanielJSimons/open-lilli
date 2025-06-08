@@ -22,7 +22,19 @@
       "Bash(/home/dsimons/.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg -B 20 \"analyzer.dynamic_layout_upgrading\" /home/dsimons/git/open-lilli/tests/test_content_fit_analyzer.py)",
       "Bash(/home/dsimons/.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg -n \"^class SmartContentFitter\" /home/dsimons/git/open-lilli/open_lilli/content_fit_analyzer.py)",
       "Bash(/home/dsimons/.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg -n \"def dynamic_layout_upgrading\" /home/dsimons/git/open-lilli/open_lilli/content_fit_analyzer.py)",
-      "Bash(/home/dsimons/.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg -A 200 \"def dynamic_layout_upgrading\" /home/dsimons/git/open-lilli/open_lilli/content_fit_analyzer.py)"
+      "Bash(/home/dsimons/.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg -A 200 \"def dynamic_layout_upgrading\" /home/dsimons/git/open-lilli/open_lilli/content_fit_analyzer.py)",
+      "Bash(cat:*)",
+      "Bash(/home/dsimons/.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg -n -C 5 \"add_picture|insert_picture|image|picture\" /home/dsimons/git/open-lilli/open_lilli/slide_assembler.py)",
+      "Bash(/home/dsimons/.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg -n -C 3 \"placeholder|PICTURE\" /home/dsimons/git/open-lilli/open_lilli/slide_assembler.py)",
+      "Bash(/home/dsimons/.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg -n -A 10 \"def _add_chart_image|def _add_image|def _add_process_flow\" /home/dsimons/git/open-lilli/open_lilli/slide_assembler.py)",
+      "Bash(/home/dsimons/.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg -n -A 20 \"def _add_chart_image\" /home/dsimons/git/open-lilli/open_lilli/slide_assembler.py)",
+      "Bash(/home/dsimons/.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg -n -B 2 -A 2 \"PP_PLACEHOLDER|PICTURE|18\" /home/dsimons/git/open-lilli/open_lilli/slide_assembler.py)",
+      "Bash(/home/dsimons/.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg -n -C 5 \"placeholder.*format.*type|find.*placeholder\" /home/dsimons/git/open-lilli/open_lilli/slide_assembler.py)",
+      "Bash(/home/dsimons/.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg \"PP_PLACEHOLDER\" /home/dsimons/git/open-lilli/open_lilli/slide_assembler.py -n)",
+      "Bash(/home/dsimons/.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg \"PP_PLACEHOLDER\\.\" /home/dsimons/git/open-lilli/open_lilli/slide_assembler.py -n)",
+      "Bash(/home/dsimons/.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg \"PP_PLACEHOLDER\\.[A-Z_]+\" /home/dsimons/git/open-lilli/ -r -n)",
+      "Bash(/home/dsimons/.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg \"PICTURE|TITLE|BODY|CONTENT|OBJECT|TEXT_BOX\" /home/dsimons/git/open-lilli/open_lilli/slide_assembler.py -n)",
+      "Bash(/home/dsimons/.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg -n \"\\b(18|12|3|2|7)\\b\" open_lilli/slide_assembler.py -C 2)"
     ],
     "deny": []
   }
