@@ -314,7 +314,10 @@ def generate(ctx: click.Context,
             console.print(f"✅ Generated {visual_summary['total_charts']} charts and {visual_summary['total_images']} images")
             progress.remove_task(task)
             
-            # Step 7: Review and Auto-refine (if enabled)
+            # Step 7: Initialize Slide Assembler (needed for auto-refine)
+            slide_assembler = SlideAssembler(template_parser)
+            
+            # Step 8: Review and Auto-refine (if enabled)
             feedback = []
             quality_result = None
             iteration_count = 0
@@ -420,9 +423,8 @@ def generate(ctx: click.Context,
                 
                 progress.remove_task(task)
             
-            # Step 8: Assemble presentation
+            # Step 9: Assemble presentation
             task = progress.add_task("🔧 Assembling PowerPoint...", total=None)
-            slide_assembler = SlideAssembler(template_parser)
             
             # Validate before assembly
             validation_issues = slide_assembler.validate_slides_before_assembly(enhanced_slides)
@@ -705,7 +707,7 @@ def regenerate(ctx: click.Context,
             # Step 7: Patch existing presentation
             task = progress.add_task("🔧 Patching presentation...", total=None)
             output_path = slide_assembler.patch_existing_presentation(
-                input_pptx, updated_slides, target_indices, visuals, output
+                input_pptx, updated_slides, target_indices, lang, visuals, output
             )
             console.print(f"✅ Patched presentation: {output_path}")
             progress.remove_task(task)

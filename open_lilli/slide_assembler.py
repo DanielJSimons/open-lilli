@@ -413,10 +413,11 @@ class SlideAssembler:
                         run.font.bold = True
                         
                         # Proactive font selection
-                        specific_font_name = self.template_parser.template_style.language_specific_fonts.get(language.lower())
-                        if specific_font_name:
-                            run.font.name = specific_font_name
-                            logger.debug(f"Applied language-specific font '{specific_font_name}' for title in language '{language.lower()}'")
+                        if self.template_parser.template_style:
+                            specific_font_name = self.template_parser.template_style.language_specific_fonts.get(language.lower())
+                            if specific_font_name:
+                                run.font.name = specific_font_name
+                                logger.debug(f"Applied language-specific font '{specific_font_name}' for title in language '{language.lower()}'")
 
                 # RTL alignment for title
                 if language.lower() in RTL_LANGUAGES:
@@ -644,10 +645,11 @@ class SlideAssembler:
                 run.font.size = Pt(adjusted_size)
 
                 # Proactive font selection for bullets
-                specific_font_name = self.template_parser.template_style.language_specific_fonts.get(language.lower())
-                if specific_font_name:
-                    run.font.name = specific_font_name
-                    logger.debug(f"Applied language-specific font '{specific_font_name}' for bullets in language '{language.lower()}'")
+                if self.template_parser.template_style:
+                    specific_font_name = self.template_parser.template_style.language_specific_fonts.get(language.lower())
+                    if specific_font_name:
+                        run.font.name = specific_font_name
+                        logger.debug(f"Applied language-specific font '{specific_font_name}' for bullets in language '{language.lower()}'")
 
                 logger.debug(f"Applied bullet level {bullet_level} with font size {adjusted_size}pt")
 
@@ -2117,7 +2119,9 @@ class SlideAssembler:
                 # Fall back to placeholder default font
                 base_font = self.template_parser.get_font_for_placeholder_type(placeholder_type)
 
-        if language and self.template_parser and self.template_parser.template_style:
+        if (language and self.template_parser and 
+            self.template_parser.template_style and
+            hasattr(self.template_parser.template_style, 'language_specific_fonts')):
             specific_font_name = self.template_parser.template_style.language_specific_fonts.get(language.lower())
             if specific_font_name and base_font:
                 # Create a new FontInfo object with the name overridden
