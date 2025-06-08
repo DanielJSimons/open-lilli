@@ -1,10 +1,3 @@
-(.venv) dsimons@1XZCX64:~/git/open-lilli$ ai-ppt generate \
-  --template templates/BrunswickTemplate.pptx \
-  --input content/final_proposal.md \
-  --output strategy-deck.pptx \
-  --auto-refine \
-  --max-iterations 3 \
-  --review
 🎯 Generating presentation from content/final_proposal.md
 Template: templates/BrunswickTemplate.pptx
 Output: strategy-deck.pptx
@@ -13,22 +6,49 @@ Max slides: 15
 Config: professional tone, intermediate complexity
 Auto-refine: enabled (max 3 iterations)
 
-⠋ 📄 Processing input content...2025-06-08 16:43:49,799 - INFO - Extracting text from file: content/final_proposal.md
-2025-06-08 16:43:49,800 - INFO - Successfully extracted 30662 characters from content/final_proposal.md
+⠋ 📄 Processing input content...2025-06-08 19:12:38,371 - INFO - Extracting text from file: content/final_proposal.md
+2025-06-08 19:12:38,371 - INFO - Successfully extracted 30662 characters from content/final_proposal.md
 ✅ Processed 30057 characters of content
-⠋ 🎨 Analyzing template...2025-06-08 16:43:49,803 - INFO - Loading template: templates/BrunswickTemplate.pptx
-⠙ 🎨 Analyzing template...2025-06-08 16:43:49,954 - INFO - Template loaded successfully with 54 layouts
-⠸ 🎨 Analyzing template...2025-06-08 16:43:50,146 - INFO - Template analysis complete. Layout map: {'content': 0, 'layout_3': 3, 'layout_4': 4, 'image_content': 5, 'title': 7, 'section': 9, 'image': 11, 'layout_13': 13, 'two_column': 19, 'layout_42': 42, 'blank': 46}
-2025-06-08 16:43:50,146 - INFO - Template style extracted with 7 placeholder styles
+⠋ 🎨 Analyzing template...2025-06-08 19:12:38,375 - INFO - Loading template: templates/BrunswickTemplate.pptx
+⠙ 🎨 Analyzing template...2025-06-08 19:12:38,561 - INFO - Template loaded successfully with 54 layouts
+⠴ 🎨 Analyzing template...2025-06-08 19:12:38,803 - INFO - Template analysis complete. Layout map: {'content': 0, 'layout_3': 3, 'layout_4': 4, 'image_content': 5, 'title': 7, 'section': 9, 'image': 11, 'layout_13': 13, 'two_column': 19, 'layout_42': 42, 'blank': 46}
+2025-06-08 19:12:38,803 - INFO - Template style extracted with 7 placeholder styles
 ✅ Found 54 layouts in template
-⠼ 🧠 Generating outline with AI...2025-06-08 16:43:50,147 - INFO - Generating outline for 30057 characters of text
-2025-06-08 16:43:50,147 - INFO - Config: max_slides=15, language=en
-⠙ 🧠 Generating outline with AI...2025-06-08 16:43:50,795 - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 400 Bad Request"
-2025-06-08 16:43:50,796 - WARNING - API error: Error code: 400 - {'error': {'message': "Invalid parameter: 'response_format' of type 'json_object' is not supported with this model.", 'type': 'invalid_request_error', 'param': 'response_format', 'code': None}}, waiting 1.0s before retry
-⠴ 🧠 Generating outline with AI...2025-06-08 16:43:52,710 - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 400 Bad Request"
-2025-06-08 16:43:52,711 - WARNING - API error: Error code: 400 - {'error': {'message': "Invalid parameter: 'response_format' of type 'json_object' is not supported with this model.", 'type': 'invalid_request_error', 'param': 'response_format', 'code': None}}, waiting 2.0s before retry
-⠼ 🧠 Generating outline with AI...2025-06-08 16:43:55,004 - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 400 Bad Request"
-⠴ 🧠 Generating outline with AI...
-❌ Error during generation: Error code: 400 - {'error': {'message': "Invalid parameter: 'response_format' of type 'json_object' is not supported with this model.", 'type': 
-'invalid_request_error', 'param': 'response_format', 'code': None}}
+⠴ 🧠 Generating outline with AI...2025-06-08 19:12:38,804 - INFO - Generating outline for 30057 characters of text
+2025-06-08 19:12:38,805 - INFO - Config: max_slides=15, language=en
+⠧ 🧠 Generating outline with AI...2025-06-08 19:12:55,031 - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+⠏ 🧠 Generating outline with AI...2025-06-08 19:12:55,169 - INFO - Successfully generated outline with 15 slides
+✅ Generated outline with 15 slides
+⠋ 📋 Planning slide layouts...2025-06-08 19:12:55,173 - INFO - No existing vector store found, starting with empty cache
+2025-06-08 19:12:55,173 - INFO - LayoutRecommender initialized with 0 embeddings
+2025-06-08 19:12:55,173 - INFO - SlidePlanner initialized with ML layout recommendations enabled
+2025-06-08 19:12:55,174 - INFO - ContentFitAnalyzer initialized
+2025-06-08 19:12:55,174 - INFO - SmartContentFitter initialized
+2025-06-08 19:12:55,174 - INFO - SlidePlanner initialized with 11 available layouts. Upshift map: {'content': 'two_column', 'image': 'image_content', 'image_content': 'two_column', 'two_column': 'content_dense', 'chart': 'image_content', 'title': 'section', 'section': 'content', 'content_dense': 'blank', 'three_column': 'content_dense', 'comparison': 'two_column'}
+2025-06-08 19:12:55,174 - INFO - Planning slides for outline with 15 slides using effective max_bullets: 5
+⠴ 📋 Planning slide layouts...2025-06-08 19:12:58,009 - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+⠼ 📋 Planning slide layouts...2025-06-08 19:13:00,424 - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+⠴ 📋 Planning slide layouts...2025-06-08 19:13:03,384 - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+⠇ 📋 Planning slide layouts...2025-06-08 19:13:06,844 - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+⠧ 📋 Planning slide layouts...2025-06-08 19:13:09,929 - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+⠼ 📋 Planning slide layouts...2025-06-08 19:13:12,146 - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+⠋ 📋 Planning slide layouts...2025-06-08 19:13:14,966 - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+⠴ 📋 Planning slide layouts...2025-06-08 19:13:17,782 - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+⠴ 📋 Planning slide layouts...2025-06-08 19:13:20,156 - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+⠸ 📋 Planning slide layouts...2025-06-08 19:13:22,417 - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+⠹ 📋 Planning slide layouts...2025-06-08 19:13:27,112 - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+⠇ 📋 Planning slide layouts...2025-06-08 19:13:36,943 - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+⠇ 📋 Planning slide layouts...2025-06-08 19:13:40,182 - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+⠹ 📋 Planning slide layouts...2025-06-08 19:13:42,900 - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+⠦ 📋 Planning slide layouts...2025-06-08 19:13:46,400 - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-06-08 19:13:46,409 - INFO - Optimizing slides for content fit
+2025-06-08 19:13:46,409 - INFO - Applying smart content rebalancing across slides
+2025-06-08 19:13:46,409 - INFO - Starting bullet rebalancing across 15 slides
+⠦ 📋 Planning slide layouts...
+❌ Error during generation: pop from empty list
 Run again with --debug or --log-file for details
+(.venv) dsimons@1XZCX64:~/git/open-lilli$ ai-ppt generate   --template templates/BrunswickTemplate.pptx   --input content/final_proposal.md   --output strategy-deck.pptx   --auto-refine   --max-iterations 3   --review --debug
+Usage: ai-ppt generate [OPTIONS]
+Try 'ai-ppt generate --help' for help.
+
+Error: No such option: --debug
