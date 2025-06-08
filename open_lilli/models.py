@@ -58,6 +58,9 @@ class SlidePlan(BaseModel):
     needs_splitting: bool = Field(
         default=False, description="Indicates if the slide needs to be split due to excessive content"
     )
+    image_alt_text: Optional[str] = Field(
+        None, description="Alternative text for the slide image, for accessibility."
+    )
 
     def get_effective_bullets(self) -> List[BulletItem]:
         """
@@ -101,7 +104,8 @@ class SlidePlan(BaseModel):
                 "chart_data": None,
                 "speaker_notes": "Emphasize the growth opportunity",
                 "layout_id": 1,
-                "summarized_by_llm": False
+                "summarized_by_llm": False,
+                "image_alt_text": "A bar chart showing market growth trends over the last 5 years."
             }
         }
 
@@ -371,6 +375,28 @@ class StyleValidationConfig(BaseModel):
         default=True,
         description="Validate bullet point styles"
     )
+    check_placeholder_population: bool = Field(
+        default=True, description="Ensure required placeholders are populated"
+    )
+    check_text_overflow: bool = Field(
+        default=True, description="Check for text overflowing its container"
+    )
+    check_alignment: bool = Field(
+        default=True, description="Verify proper alignment of elements"
+    )
+    check_accessibility: bool = Field(
+        default=True, description="Perform basic accessibility checks (e.g., alt text for images)"
+    )
+    autofix_text_overflow: bool = Field(
+        default=True, description="Enable auto-fixing of text overflow issues"
+    )
+    autofix_alignment: bool = Field(
+        default=True, description="Enable auto-fixing of alignment issues"
+    )
+    quality_gates_config: Optional[QualityGates] = Field(
+        default_factory=QualityGates,
+        description="Configuration for quality gates, including slide margins for alignment checks."
+    )
     
     class Config:
         """Pydantic configuration."""
@@ -388,7 +414,20 @@ class StyleValidationConfig(BaseModel):
                 "allow_empty_placeholders": False,
                 "check_title_placeholders": True,
                 "check_content_placeholders": True,
-                "check_bullet_styles": True
+                "check_bullet_styles": True,
+                "check_placeholder_population": True,
+                "check_text_overflow": True,
+                "check_alignment": True,
+                "check_accessibility": True,
+                "autofix_text_overflow": True,
+                "autofix_alignment": True,
+                "quality_gates_config": {
+                    "slide_margin_top_inches": 0.5,
+                    "slide_margin_bottom_inches": 0.5,
+                    "slide_margin_left_inches": 0.5,
+                    "slide_margin_right_inches": 0.5,
+                    "enable_alignment_check": True # Example field from QualityGates
+                }
             }
         }
 
