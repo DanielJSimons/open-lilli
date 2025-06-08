@@ -15,7 +15,14 @@
       "Bash(source:*)",
       "Bash(ai-ppt generate:*)",
       "Bash(/home/dsimons/.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg \"rebalance\\(\" -A 3 -B 3)",
-      "Bash(/home/dsimons/.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg \"class SlidePlan\" -A 30)"
+      "Bash(/home/dsimons/.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg \"class SlidePlan\" -A 30)",
+      "Bash(/home/dsimons/.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg \"dynamic_layout_upgrading\" -n)",
+      "Bash(/home/dsimons/.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg \"content_fit_analyzer.*=\" -A 3 -B 3)",
+      "Bash(/home/dsimons/.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg \"content_fit_analyzer\\.\" /home/dsimons/git/open-lilli/open_lilli/slide_planner.py)",
+      "Bash(/home/dsimons/.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg -B 20 \"analyzer.dynamic_layout_upgrading\" /home/dsimons/git/open-lilli/tests/test_content_fit_analyzer.py)",
+      "Bash(/home/dsimons/.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg -n \"^class SmartContentFitter\" /home/dsimons/git/open-lilli/open_lilli/content_fit_analyzer.py)",
+      "Bash(/home/dsimons/.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg -n \"def dynamic_layout_upgrading\" /home/dsimons/git/open-lilli/open_lilli/content_fit_analyzer.py)",
+      "Bash(/home/dsimons/.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg -A 200 \"def dynamic_layout_upgrading\" /home/dsimons/git/open-lilli/open_lilli/content_fit_analyzer.py)"
     ],
     "deny": []
   }

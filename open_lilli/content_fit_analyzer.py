@@ -668,6 +668,167 @@ REQUIREMENTS:
             "optimization_rate": slides_requiring_action / total_slides if total_slides > 0 else 0
         }
 
+    def dynamic_layout_upgrading(
+        self,
+        slide: SlidePlan,
+        template_parser,
+        template_style: Optional[TemplateStyle] = None
+    ) -> Optional[SlidePlan]:
+        """
+        Dynamically upgrade slide layout to one with higher capacity when content overflows.
+        
+        This method analyzes the current slide's layout and attempts to find a better
+        layout that can accommodate more content, avoiding the need for font reduction
+        or slide splitting.
+        
+        Args:
+            slide: SlidePlan to potentially upgrade
+            template_parser: TemplateParser for layout information
+            template_style: Optional template style information
+            
+        Returns:
+            SlidePlan with upgraded layout or None if no better layout found
+        """
+        # Get current layout information
+        current_layout_id = slide.layout_id
+        if current_layout_id is None:
+            logger.debug(f"Slide {slide.index} has no layout ID, cannot upgrade")
+            return None
+        
+        current_layout_type = template_parser.get_layout_type_by_id(current_layout_id)
+        if not current_layout_type:
+            logger.debug(f"Slide {slide.index} has unknown layout type, cannot upgrade")
+            return None
+        
+        # Analyze current density
+        current_density = self.analyze_slide_density(slide, template_style)
+        if not current_density.requires_action:
+            logger.debug(f"Slide {slide.index} doesn't require action, no upgrade needed")
+            return None
+        
+        # Define layout upgrade hierarchy (from lower to higher capacity) - T-99 Extended
+        layout_hierarchy = {
+            "content": ["two_column", "content_dense", "blank"],
+            "image": ["image_content", "two_column", "content_dense", "blank"],
+            "image_content": ["two_column", "content_dense", "blank"],
+            "chart": ["image_content", "two_column", "content_dense", "blank"],
+            "title": ["section", "content", "two_column", "blank"],
+            "section": ["content", "two_column", "content_dense", "blank"],
+            "two_column": ["content_dense", "three_column", "blank"],
+            "comparison": ["two_column", "content_dense", "blank"],
+            "three_column": ["content_dense", "blank"],
+            "content_dense": ["blank"]
+        }
+        
+        # Get possible upgrades for current layout type
+        possible_upgrades = layout_hierarchy.get(current_layout_type, [])
+        if not possible_upgrades:
+            logger.debug(f"No upgrade path defined for layout type '{current_layout_type}'")
+            return None
+        
+        # Try each upgrade option in order
+        for upgrade_layout_type in possible_upgrades:
+            try:
+                upgrade_layout_id = template_parser.get_layout_index(upgrade_layout_type)
+                if upgrade_layout_id is None or upgrade_layout_id == current_layout_id:
+                    continue
+                
+                # Create test slide with upgraded layout
+                test_slide = slide.model_copy()
+                test_slide.layout_id = upgrade_layout_id
+                
+                # Analyze density with new layout
+                # Note: This is an approximation since different layouts may have different capacities
+                upgrade_capacity_factor = self._get_layout_capacity_factor(upgrade_layout_type)
+                test_density = self._analyze_density_with_capacity_factor(
+                    test_slide, template_style, upgrade_capacity_factor
+                )
+                
+                # Check if upgrade resolves overflow
+                if not test_density.requires_action:
+                    logger.info(f"Slide {slide.index}: Dynamic layout upgrade from '{current_layout_type}' "
+                              f"to '{upgrade_layout_type}' resolves overflow "
+                              f"(density: {current_density.density_ratio:.2f} → {test_density.density_ratio:.2f})")
+                    return test_slide
+                    
+                # Check if significant improvement even if not fully resolved
+                improvement = current_density.density_ratio - test_density.density_ratio
+                if improvement > 0.2:  # Significant improvement threshold
+                    logger.info(f"Slide {slide.index}: Dynamic layout upgrade from '{current_layout_type}' "
+                              f"to '{upgrade_layout_type}' provides significant improvement "
+                              f"(density: {current_density.density_ratio:.2f} → {test_density.density_ratio:.2f})")
+                    return test_slide
+                
+            except (ValueError, AttributeError) as e:
+                logger.debug(f"Failed to test upgrade to '{upgrade_layout_type}': {e}")
+                continue
+        
+        logger.debug(f"Slide {slide.index}: No beneficial layout upgrade found")
+        return None
+    
+    def _get_layout_capacity_factor(self, layout_type: str) -> float:
+        """
+        Get capacity factor for different layout types.
+        
+        Args:
+            layout_type: Type of layout
+            
+        Returns:
+            Capacity factor (1.0 = standard, > 1.0 = higher capacity)
+        """
+        capacity_factors = {
+            "title": 0.6,          # Less content capacity
+            "section": 0.8,        # Limited content capacity
+            "content": 1.0,        # Standard content capacity
+            "image": 0.7,          # Reduced due to image space
+            "chart": 0.7,          # Reduced due to chart space
+            "image_content": 0.8,  # Mixed layout with moderate capacity
+            "two_column": 1.4,     # Higher capacity with two columns
+            "content_dense": 1.6,  # Dense content layout with optimized spacing
+            "three_column": 1.7,   # Three column layout for maximum content
+            "comparison": 1.3,     # Comparison layout with dual content areas
+            "blank": 1.8           # Maximum flexibility
+        }
+        
+        return capacity_factors.get(layout_type, 1.0)
+    
+    def _analyze_density_with_capacity_factor(
+        self,
+        slide: SlidePlan,
+        template_style: Optional[TemplateStyle],
+        capacity_factor: float
+    ) -> ContentDensityAnalysis:
+        """
+        Analyze slide density with a capacity adjustment factor.
+        
+        Args:
+            slide: SlidePlan to analyze
+            template_style: Optional template style information
+            capacity_factor: Factor to adjust estimated capacity
+            
+        Returns:
+            ContentDensityAnalysis with adjusted capacity
+        """
+        # Get standard analysis
+        standard_analysis = self.analyze_slide_density(slide, template_style)
+        
+        # Adjust capacity and recalculate density ratio
+        adjusted_capacity = int(standard_analysis.placeholder_capacity * capacity_factor)
+        adjusted_density_ratio = standard_analysis.total_characters / max(adjusted_capacity, 1)
+        
+        # Determine new recommended action
+        adjusted_requires_action = adjusted_density_ratio > 1.0
+        adjusted_recommended_action = self._determine_action(adjusted_density_ratio, slide)
+        
+        return ContentDensityAnalysis(
+            total_characters=standard_analysis.total_characters,
+            estimated_lines=standard_analysis.estimated_lines,
+            placeholder_capacity=adjusted_capacity,
+            density_ratio=adjusted_density_ratio,
+            requires_action=adjusted_requires_action,
+            recommended_action=adjusted_recommended_action
+        )
+
 
 class SmartContentFitter:
     """Smart content fitting with advanced bullet redistribution capabilities."""
@@ -847,163 +1008,3 @@ class SmartContentFitter:
         
         return bullets_moved
 
-    def dynamic_layout_upgrading(
-        self,
-        slide: SlidePlan,
-        template_parser,
-        template_style: Optional[TemplateStyle] = None
-    ) -> Optional[SlidePlan]:
-        """
-        Dynamically upgrade slide layout to one with higher capacity when content overflows.
-        
-        This method analyzes the current slide's layout and attempts to find a better
-        layout that can accommodate more content, avoiding the need for font reduction
-        or slide splitting.
-        
-        Args:
-            slide: SlidePlan to potentially upgrade
-            template_parser: TemplateParser for layout information
-            template_style: Optional template style information
-            
-        Returns:
-            SlidePlan with upgraded layout or None if no better layout found
-        """
-        # Get current layout information
-        current_layout_id = slide.layout_id
-        if current_layout_id is None:
-            logger.debug(f"Slide {slide.index} has no layout ID, cannot upgrade")
-            return None
-        
-        current_layout_type = template_parser.get_layout_type_by_id(current_layout_id)
-        if not current_layout_type:
-            logger.debug(f"Slide {slide.index} has unknown layout type, cannot upgrade")
-            return None
-        
-        # Analyze current density
-        current_density = self.analyzer.analyze_slide_density(slide, template_style)
-        if not current_density.requires_action:
-            logger.debug(f"Slide {slide.index} doesn't require action, no upgrade needed")
-            return None
-        
-        # Define layout upgrade hierarchy (from lower to higher capacity) - T-99 Extended
-        layout_hierarchy = {
-            "content": ["two_column", "content_dense", "blank"],
-            "image": ["image_content", "two_column", "content_dense", "blank"],
-            "image_content": ["two_column", "content_dense", "blank"],
-            "chart": ["image_content", "two_column", "content_dense", "blank"],
-            "title": ["section", "content", "two_column", "blank"],
-            "section": ["content", "two_column", "content_dense", "blank"],
-            "two_column": ["content_dense", "three_column", "blank"],
-            "comparison": ["two_column", "content_dense", "blank"],
-            "three_column": ["content_dense", "blank"],
-            "content_dense": ["blank"]
-        }
-        
-        # Get possible upgrades for current layout type
-        possible_upgrades = layout_hierarchy.get(current_layout_type, [])
-        if not possible_upgrades:
-            logger.debug(f"No upgrade path defined for layout type '{current_layout_type}'")
-            return None
-        
-        # Try each upgrade option in order
-        for upgrade_layout_type in possible_upgrades:
-            try:
-                upgrade_layout_id = template_parser.get_layout_index(upgrade_layout_type)
-                if upgrade_layout_id is None or upgrade_layout_id == current_layout_id:
-                    continue
-                
-                # Create test slide with upgraded layout
-                test_slide = slide.model_copy()
-                test_slide.layout_id = upgrade_layout_id
-                
-                # Analyze density with new layout
-                # Note: This is an approximation since different layouts may have different capacities
-                upgrade_capacity_factor = self._get_layout_capacity_factor(upgrade_layout_type)
-                test_density = self._analyze_density_with_capacity_factor(
-                    test_slide, template_style, upgrade_capacity_factor
-                )
-                
-                # Check if upgrade resolves overflow
-                if not test_density.requires_action:
-                    logger.info(f"Slide {slide.index}: Dynamic layout upgrade from '{current_layout_type}' "
-                              f"to '{upgrade_layout_type}' resolves overflow "
-                              f"(density: {current_density.density_ratio:.2f} → {test_density.density_ratio:.2f})")
-                    return test_slide
-                    
-                # Check if significant improvement even if not fully resolved
-                improvement = current_density.density_ratio - test_density.density_ratio
-                if improvement > 0.2:  # Significant improvement threshold
-                    logger.info(f"Slide {slide.index}: Dynamic layout upgrade from '{current_layout_type}' "
-                              f"to '{upgrade_layout_type}' provides significant improvement "
-                              f"(density: {current_density.density_ratio:.2f} → {test_density.density_ratio:.2f})")
-                    return test_slide
-                
-            except (ValueError, AttributeError) as e:
-                logger.debug(f"Failed to test upgrade to '{upgrade_layout_type}': {e}")
-                continue
-        
-        logger.debug(f"Slide {slide.index}: No beneficial layout upgrade found")
-        return None
-    
-    def _get_layout_capacity_factor(self, layout_type: str) -> float:
-        """
-        Get capacity factor for different layout types.
-        
-        Args:
-            layout_type: Type of layout
-            
-        Returns:
-            Capacity factor (1.0 = standard, > 1.0 = higher capacity)
-        """
-        capacity_factors = {
-            "title": 0.6,          # Less content capacity
-            "section": 0.8,        # Limited content capacity
-            "content": 1.0,        # Standard content capacity
-            "image": 0.7,          # Reduced due to image space
-            "chart": 0.7,          # Reduced due to chart space
-            "image_content": 0.8,  # Mixed layout with moderate capacity
-            "two_column": 1.4,     # Higher capacity with two columns
-            "content_dense": 1.6,  # Dense content layout with optimized spacing
-            "three_column": 1.7,   # Three column layout for maximum content
-            "comparison": 1.3,     # Comparison layout with dual content areas
-            "blank": 1.8           # Maximum flexibility
-        }
-        
-        return capacity_factors.get(layout_type, 1.0)
-    
-    def _analyze_density_with_capacity_factor(
-        self,
-        slide: SlidePlan,
-        template_style: Optional[TemplateStyle],
-        capacity_factor: float
-    ) -> ContentDensityAnalysis:
-        """
-        Analyze slide density with a capacity adjustment factor.
-        
-        Args:
-            slide: SlidePlan to analyze
-            template_style: Optional template style information
-            capacity_factor: Factor to adjust estimated capacity
-            
-        Returns:
-            ContentDensityAnalysis with adjusted capacity
-        """
-        # Get standard analysis
-        standard_analysis = self.analyzer.analyze_slide_density(slide, template_style)
-        
-        # Adjust capacity and recalculate density ratio
-        adjusted_capacity = int(standard_analysis.placeholder_capacity * capacity_factor)
-        adjusted_density_ratio = standard_analysis.total_characters / max(adjusted_capacity, 1)
-        
-        # Determine new recommended action
-        adjusted_requires_action = adjusted_density_ratio > 1.0
-        adjusted_recommended_action = self.analyzer._determine_action(adjusted_density_ratio, slide)
-        
-        return ContentDensityAnalysis(
-            total_characters=standard_analysis.total_characters,
-            estimated_lines=standard_analysis.estimated_lines,
-            placeholder_capacity=adjusted_capacity,
-            density_ratio=adjusted_density_ratio,
-            requires_action=adjusted_requires_action,
-            recommended_action=adjusted_recommended_action
-        )
