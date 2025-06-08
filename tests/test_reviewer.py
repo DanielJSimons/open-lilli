@@ -55,7 +55,6 @@ def test_calculate_apca_contrast_ratio(fg_hex, bg_hex, expected_lc_approx, comme
         assert apca_lc == pytest.approx(expected_lc_approx, abs=1.5), f"Test failed for: {comment}"
 
 
-class TestReviewer:
 # --- Mock classes for pptx objects ---
 class MockParagraph:
     def __init__(self, text=""):
