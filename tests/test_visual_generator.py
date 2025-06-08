@@ -167,9 +167,10 @@ class TestVisualGenerator:
         slide = self.create_chart_slide()
         
         chart_path = self.generator._generate_bar_chart(slide)
-        
+
         assert chart_path is not None
         assert chart_path.exists()
+        assert "bar" in chart_path.name
 
     def test_generate_area_chart(self):
         """Test area chart generation."""
@@ -315,7 +316,6 @@ def test_png_doughnut_chart_when_native_disabled(mock_generate_doughnut_png, vis
     assert visuals[0] == {"chart": str(MOCK_PNG_PATH)}
     mock_generate_doughnut_png.assert_called_once()
 
-        assert "bar" in chart_path.name
 
     def test_generate_line_chart(self):
         """Test line chart generation."""
