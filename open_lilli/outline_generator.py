@@ -206,9 +206,10 @@ Generate the outline now:"""
             try:
                 logger.debug(f"OpenAI API call attempt {attempt + 1}")
                 
-                response = self.client.chat.completions.create(
-                    model=self.model,
-                    messages=[
+                # Build request parameters
+                request_params = {
+                    "model": self.model,
+                    "messages": [
                         {
                             "role": "system",
                             "content": "You are an expert presentation designer. Always respond with valid JSON only."
@@ -218,10 +219,15 @@ Generate the outline now:"""
                             "content": prompt
                         }
                     ],
-                    temperature=self.temperature,
-                    max_tokens=4000,
-                    response_format={"type": "json_object"}
-                )
+                    "temperature": self.temperature,
+                    "max_tokens": 4000
+                }
+                
+                # Only add response_format for models that support it
+                if self._supports_json_mode():
+                    request_params["response_format"] = {"type": "json_object"}
+                
+                response = self.client.chat.completions.create(**request_params)
                 
                 content = response.choices[0].message.content
                 if not content:
@@ -255,24 +261,40 @@ Generate the outline now:"""
         
         raise ValueError("Failed to generate outline after all retries")
 
+    def _supports_json_mode(self) -> bool:
+        """Check if the current model supports JSON mode."""
+        json_mode_models = [
+            "gpt-4", "gpt-4-0613", "gpt-4-1106-preview", "gpt-4-0125-preview",
+            "gpt-4-turbo-preview", "gpt-4-turbo", "gpt-4o", "gpt-4o-mini",
+            "gpt-3.5-turbo", "gpt-3.5-turbo-0613", "gpt-3.5-turbo-1106", "gpt-3.5-turbo-0125"
+        ]
+        return any(model in self.model for model in json_mode_models)
+
     async def _call_openai_with_retries_async(self, prompt: str) -> dict:
         """Asynchronous version of ``_call_openai_with_retries``."""
         for attempt in range(self.max_retries):
             try:
                 logger.debug(f"OpenAI API call attempt {attempt + 1} (async)")
-                response = await self.client.chat.completions.create(
-                    model=self.model,
-                    messages=[
+                
+                # Build request parameters
+                request_params = {
+                    "model": self.model,
+                    "messages": [
                         {
                             "role": "system",
                             "content": "You are an expert presentation designer. Always respond with valid JSON only.",
                         },
                         {"role": "user", "content": prompt},
                     ],
-                    temperature=self.temperature,
-                    max_tokens=4000,
-                    response_format={"type": "json_object"},
-                )
+                    "temperature": self.temperature,
+                    "max_tokens": 4000
+                }
+                
+                # Only add response_format for models that support it
+                if self._supports_json_mode():
+                    request_params["response_format"] = {"type": "json_object"}
+                
+                response = await self.client.chat.completions.create(**request_params)
 
                 content = response.choices[0].message.content
                 if not content:

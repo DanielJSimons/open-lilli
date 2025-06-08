@@ -462,6 +462,15 @@ Be thorough but focus on genuine issues that would be noticed by a professional 
 
         return prompt
     
+    def _supports_json_mode(self) -> bool:
+        """Check if the current model supports JSON mode."""
+        json_mode_models = [
+            "gpt-4", "gpt-4-0613", "gpt-4-1106-preview", "gpt-4-0125-preview",
+            "gpt-4-turbo-preview", "gpt-4-turbo", "gpt-4o", "gpt-4o-mini",
+            "gpt-3.5-turbo", "gpt-3.5-turbo-0613", "gpt-3.5-turbo-1106", "gpt-3.5-turbo-0125"
+        ]
+        return any(model in self.model for model in json_mode_models)
+
     def _call_llm_with_retries(self, prompt: str) -> dict:
         """
         Call LLM API with retry logic.
@@ -479,9 +488,10 @@ Be thorough but focus on genuine issues that would be noticed by a professional 
             try:
                 logger.debug(f"LLM API call attempt {attempt + 1}")
                 
-                response = self.client.chat.completions.create(
-                    model=self.model,
-                    messages=[
+                # Build request parameters
+                request_params = {
+                    "model": self.model,
+                    "messages": [
                         {
                             "role": "system",
                             "content": "You are an expert presentation design consultant. Always respond with valid JSON only."
@@ -491,10 +501,15 @@ Be thorough but focus on genuine issues that would be noticed by a professional 
                             "content": prompt
                         }
                     ],
-                    temperature=self.temperature,
-                    max_tokens=3000,
-                    response_format={"type": "json_object"}
-                )
+                    "temperature": self.temperature,
+                    "max_tokens": 3000
+                }
+                
+                # Only add response_format for models that support it
+                if self._supports_json_mode():
+                    request_params["response_format"] = {"type": "json_object"}
+                
+                response = self.client.chat.completions.create(**request_params)
                 
                 content = response.choices[0].message.content
                 if not content:

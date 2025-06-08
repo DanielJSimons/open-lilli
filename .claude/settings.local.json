@@ -10,7 +10,9 @@
       "Bash(rm:*)",
       "Bash(grep:*)",
       "Bash(rg:*)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(poetry install:*)",
+      "Bash(source:*)"
     ],
     "deny": []
   }
