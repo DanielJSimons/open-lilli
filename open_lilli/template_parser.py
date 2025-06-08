@@ -11,7 +11,10 @@ from pptx.slide import SlideLayout
 from pptx.enum.shapes import MSO_SHAPE_TYPE
 from pptx.enum.dml import MSO_FILL_TYPE
 
-from .models import TemplateStyle, FontInfo, BulletInfo, PlaceholderStyleInfo
+from .models import (
+    TemplateStyle, FontInfo, BulletInfo, PlaceholderStyleInfo,
+    TemplateCompatibilityReport, DesignPattern
+)
 
 logger = logging.getLogger(__name__)
 
@@ -881,3 +884,265 @@ class TemplateParser:
             The semantic name of the layout type (e.g., "content", "title") or None if not found.
         """
         return self.reverse_layout_map.get(layout_id)
+
+    def _hex_to_rgb(self, hex_color: str) -> Tuple[int, int, int]:
+        """Convert hex color string to RGB tuple."""
+        hex_color = hex_color.lstrip('#')
+        if len(hex_color) == 3: # Expand shorthand hex
+            hex_color = "".join([c*2 for c in hex_color])
+        if len(hex_color) != 6:
+            raise ValueError(f"Invalid hex color format: {hex_color}")
+        try:
+            return tuple(int(hex_color[i:i+2], 16) for i in (0, 2, 4))
+        except ValueError:
+            raise ValueError(f"Invalid character in hex color: {hex_color}")
+
+    def _relative_luminance(self, rgb_color: Tuple[int, int, int]) -> float:
+        """Calculate relative luminance for an RGB color."""
+        r, g, b = [x / 255.0 for x in rgb_color]
+        r = r / 12.92 if r <= 0.03928 else ((r + 0.055) / 1.055) ** 2.4
+        g = g / 12.92 if g <= 0.03928 else ((g + 0.055) / 1.055) ** 2.4
+        b = b / 12.92 if b <= 0.03928 else ((b + 0.055) / 1.055) ** 2.4
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+    def _calculate_contrast_ratio(self, color1_hex: str, color2_hex: str) -> float:
+        """Calculate contrast ratio between two hex colors."""
+        try:
+            rgb1 = self._hex_to_rgb(color1_hex)
+            rgb2 = self._hex_to_rgb(color2_hex)
+        except ValueError as e:
+            logger.warning(f"Invalid color format for contrast calculation: {e}")
+            return 1.0 # Default to lowest contrast if color is invalid
+
+        lum1 = self._relative_luminance(rgb1)
+        lum2 = self._relative_luminance(rgb2)
+
+        if lum1 > lum2:
+            return (lum1 + 0.05) / (lum2 + 0.05)
+        else:
+            return (lum2 + 0.05) / (lum1 + 0.05)
+
+    def check_template_compatibility(self) -> TemplateCompatibilityReport:
+        """
+        Checks the template for compatibility and best practices.
+
+        Returns:
+            A TemplateCompatibilityReport object.
+        """
+        report = TemplateCompatibilityReport()
+        essential_placeholders = ["title", "content", "section", "image"]
+        found_placeholders = self.layout_map.keys()
+
+        # Placeholder Check
+        for ph_type in essential_placeholders:
+            if ph_type not in found_placeholders:
+                report.missing_placeholders.append(ph_type)
+                report.suggestions.append(f"Consider adding a '{ph_type}' layout for better versatility.")
+
+        if report.missing_placeholders:
+            report.issues.append(
+                f"Missing essential placeholder types: {', '.join(report.missing_placeholders)}. "
+                "This may limit the types of slides that can be automatically generated."
+            )
+            report.passed_all_checks = False
+
+        # Color Scheme & Contrast Check
+        dk1 = self.palette.get("dk1")
+        lt1 = self.palette.get("lt1")
+
+        if not dk1:
+            report.color_scheme_warnings.append("Theme color 'dk1' (primary dark) is not defined.")
+            report.passed_all_checks = False
+        if not lt1:
+            report.color_scheme_warnings.append("Theme color 'lt1' (primary light) is not defined.")
+            report.passed_all_checks = False
+
+        if dk1 and lt1 and dk1.upper() == lt1.upper():
+            report.color_scheme_warnings.append("'dk1' and 'lt1' colors are identical, which will cause contrast issues.")
+            report.passed_all_checks = False
+
+        if report.color_scheme_warnings:
+             report.issues.append("Issues found with the template's color scheme definitions.")
+
+
+        # Contrast Checks for common pairs
+        # Using a simplified threshold of 3:1 for basic check as per requirements
+        # WCAG AA typically requires 4.5:1 for normal text.
+        contrast_threshold = 3.0
+        color_pairs_to_check = [
+            ("dk1", "lt1"),
+            ("acc1", "lt1"),
+            ("dk1", "acc1"), # Check against accent if it's used for text on dark backgrounds
+            ("acc2", "lt1"),
+            ("acc3", "dk1"), # Example: accent on dark background
+        ]
+
+        for c1_name, c2_name in color_pairs_to_check:
+            color1 = self.palette.get(c1_name)
+            color2 = self.palette.get(c2_name)
+
+            if color1 and color2:
+                try:
+                    ratio = self._calculate_contrast_ratio(color1, color2)
+                    if ratio < contrast_threshold:
+                        report.contrast_issues.append(
+                            f"Low contrast between '{c1_name}' ({color1}) and '{c2_name}' ({color2}). "
+                            f"Ratio: {ratio:.2f}:1. Minimum recommended: {contrast_threshold}:1."
+                        )
+                        report.passed_all_checks = False
+                except ValueError as e: # Handles invalid hex codes passed to ratio calc
+                     report.color_scheme_warnings.append(f"Could not calculate contrast for '{c1_name}' and '{c2_name}': {e}")
+                     report.passed_all_checks = False # Treat as a failure if colors can't be parsed
+
+            elif not color1:
+                report.color_scheme_warnings.append(f"Color '{c1_name}' not found in palette for contrast check.")
+            elif not color2:
+                report.color_scheme_warnings.append(f"Color '{c2_name}' not found in palette for contrast check.")
+
+        if report.contrast_issues:
+            report.issues.append("One or more color pairs have insufficient contrast, potentially affecting readability.")
+            report.suggestions.append("Review theme colors to ensure text is clearly readable against backgrounds. Aim for a contrast ratio of at least 3:1 (or 4.5:1 for WCAG AA).")
+
+        # Overall Status
+        if report.passed_all_checks:
+            report.suggestions.append("Template appears to meet basic compatibility checks.")
+        else:
+            if not report.issues: # Ensure there's at least one issue if not passing
+                 report.issues.append("Template has one or more compatibility issues requiring attention.")
+            if not report.suggestions: # Ensure there's at least one suggestion
+                report.suggestions.append("Review the reported issues and warnings to improve template compatibility.")
+
+        return report
+
+    def analyze_design_pattern(self) -> DesignPattern:
+        """
+        Analyzes the template to infer a design pattern.
+
+        Returns:
+            A DesignPattern object with inferred characteristics.
+        """
+        # Defaults
+        font_scale_ratio = 1.8  # Typical default (e.g., 36pt title / 20pt body)
+        color_complexity_score = 0.5
+        layout_density_preference = "medium"
+        name = "standard"
+        primary_intent = "balanced"
+
+        # --- Font Analysis ---
+        title_font_info = self.template_style.get_font_for_placeholder_type(1) # TITLE
+        if not title_font_info: # Try CENTERED_TITLE
+            title_font_info = self.template_style.get_font_for_placeholder_type(13)
+
+        body_font_info = self.template_style.get_font_for_placeholder_type(2) # BODY
+        if not body_font_info: # Try OBJECT
+            body_font_info = self.template_style.get_font_for_placeholder_type(7)
+
+        if title_font_info and title_font_info.size and \
+           body_font_info and body_font_info.size and body_font_info.size > 0:
+            font_scale_ratio = round(title_font_info.size / body_font_info.size, 2)
+        elif title_font_info and title_font_info.size:
+            # Only title font is available, assume a default body size for ratio estimation
+            # This is a heuristic. Common body font sizes are 10-12pt for notes, 18-24pt for content.
+            # Let's assume a generic "smaller" body font.
+            assumed_body_font_size = max(12.0, title_font_info.size / 2.0) # Ensure it's not excessively small
+            font_scale_ratio = round(title_font_info.size / assumed_body_font_size, 2)
+        elif body_font_info and body_font_info.size:
+             # Only body font is available
+            assumed_title_font_size = body_font_info.size * 1.8
+            font_scale_ratio = round(assumed_title_font_size / body_font_info.size, 2)
+        else:
+            logger.debug("Could not determine both title and body font sizes for scale ratio.")
+            # font_scale_ratio remains default 1.8
+
+        # --- Color Analysis ---
+        distinct_accent_colors = set()
+        base_colors = {self.palette.get("dk1", "").upper(), self.palette.get("lt1", "").upper()}
+
+        for i in range(1, 7): # acc1 to acc6
+            accent_color = self.palette.get(f"acc{i}")
+            if accent_color:
+                accent_color_upper = accent_color.upper()
+                # Check if it's different from base colors and other accents already counted
+                # A simple threshold for "significantly different" might be needed if colors are very close
+                # For now, exact match check.
+                if accent_color_upper not in base_colors and accent_color_upper not in distinct_accent_colors:
+                    # Rudimentary check for very similar colors (e.g. #FEFEFE vs #FFFFFF)
+                    # This is simplistic; a proper color difference metric (delta E) would be better.
+                    is_very_similar_to_base = False
+                    for base_c in base_colors:
+                        if base_c and len(base_c) == 7 and len(accent_color_upper) == 7:
+                            # Count differing hex characters (simple difference)
+                            diff = sum(1 for c1, c2 in zip(base_c[1:], accent_color_upper[1:]) if c1 != c2)
+                            if diff <= 1: # Allow only 1 char difference (e.g. #F0F0F0 vs #F1F0F0)
+                                is_very_similar_to_base = True
+                                break
+                    if not is_very_similar_to_base:
+                         distinct_accent_colors.add(accent_color_upper)
+
+        num_distinct_accents = len(distinct_accent_colors)
+        if num_distinct_accents <= 1:
+            color_complexity_score = 0.2  # Low
+        elif num_distinct_accents <= 3:
+            color_complexity_score = 0.6  # Medium
+        else:
+            color_complexity_score = 0.9  # High
+
+        # --- Layout Density Analysis ---
+        dense_layout_keywords = ["two_column", "image_content"] # Add more if other complex types are classified
+        dense_layout_count = 0
+        simple_layout_count = 0
+
+        for layout_name in self.layout_map.keys():
+            if any(keyword in layout_name for keyword in dense_layout_keywords):
+                dense_layout_count += 1
+            elif "content" in layout_name or "title" in layout_name or "section" in layout_name or "blank" in layout_name:
+                # Only count if it's not also a dense layout (e.g. "image_content" is not simple)
+                if not any(keyword in layout_name for keyword in dense_layout_keywords):
+                    simple_layout_count +=1
+
+        total_layouts = len(self.layout_map)
+        if total_layouts > 0:
+            dense_ratio = dense_layout_count / total_layouts
+            if dense_ratio >= 0.4: # At least 40% of layouts are "dense"
+                layout_density_preference = "high"
+            elif dense_ratio <= 0.15 and simple_layout_count / total_layouts >= 0.5 : # Few dense, mostly simple
+                layout_density_preference = "low"
+            else:
+                layout_density_preference = "medium"
+        else:
+            layout_density_preference = "medium" # Default if no layouts
+
+        # --- Derive Name and Primary Intent ---
+        # These rules are heuristics and can be expanded.
+        if font_scale_ratio < 1.5 and color_complexity_score < 0.35 and layout_density_preference == "low":
+            name = "minimalist"
+            primary_intent = "readability"
+        elif color_complexity_score >= 0.7 and font_scale_ratio >= 1.8:
+            name = "vibrant"
+            primary_intent = "visual_impact"
+        elif layout_density_preference == "high" and font_scale_ratio < 2.0 : # Data-heavy might prefer slightly smaller titles relative to content
+            name = "data-heavy"
+            primary_intent = "information_density"
+        elif font_scale_ratio >= 2.2 and color_complexity_score >= 0.5:
+            name = "bold & colorful"
+            primary_intent = "visual_impact"
+        elif font_scale_ratio <= 1.3 and color_complexity_score <= 0.3 and layout_density_preference != "high":
+            name = "subtle & clean"
+            primary_intent = "readability"
+        else: # Default "standard" if no strong indicators
+            name = "standard"
+            if font_scale_ratio > 2.0: # Standard but with large titles
+                primary_intent = "strong_hierarchy"
+            elif color_complexity_score < 0.4:
+                primary_intent = "clarity"
+            else:
+                primary_intent = "balanced"
+
+
+        return DesignPattern(
+            name=name,
+            font_scale_ratio=font_scale_ratio,
+            color_complexity_score=color_complexity_score,
+            layout_density_preference=layout_density_preference,
+            primary_intent=primary_intent
+        )

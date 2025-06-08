@@ -1,10 +1,10 @@
 """Tests for slide planner."""
 
-from unittest.mock import Mock
+from unittest.mock import Mock, MagicMock
 
 import pytest
 
-from open_lilli.models import GenerationConfig, Outline, SlidePlan
+from open_lilli.models import GenerationConfig, Outline, SlidePlan, DesignPattern
 from open_lilli.slide_planner import SlidePlanner
 from open_lilli.template_parser import TemplateParser
 
@@ -417,3 +417,175 @@ class TestSlidePlanner:
         
         # Should have more than 1 slide after splitting
         assert len(final_slides) > 1, "Should have split into multiple slides"
+
+
+    # --- Tests for Design Pattern Influence ---
+
+    @pytest.fixture
+    def planner_with_design_pattern(self, request):
+        """Fixture to create SlidePlanner with a specific DesignPattern."""
+        design_pattern_params = getattr(request, "param", {})
+        design_pattern = DesignPattern(**design_pattern_params) if design_pattern_params else None
+
+        # Mock TemplateParser and OpenAI client as they are dependencies
+        mock_tp = Mock(spec=TemplateParser)
+        mock_tp.layout_map = {
+            "title": 0, "content": 1, "section": 2, "image": 3, "two_column": 4, "blank": 5
+        }
+        mock_tp.list_available_layouts.return_value = list(mock_tp.layout_map.keys())
+        mock_tp.get_layout_index = lambda lt: mock_tp.layout_map.get(lt, 0)
+        mock_tp.get_layout_type_by_id = lambda idx: next((k for k, v in mock_tp.layout_map.items() if v == idx), f"layout_{idx}")
+
+        # Mock presentation for validation step in planner
+        mock_tp.prs = Mock()
+        mock_tp.prs.slide_layouts = [Mock() for _ in range(len(mock_tp.layout_map))]
+
+        # Mock ContentFitAnalyzer and SmartContentFitter as they are used internally
+        # and might require template_style or openai_client
+        mock_openai_client = MagicMock() # Using MagicMock for more flexibility if methods are called
+
+        planner = SlidePlanner(
+            template_parser=mock_tp,
+            openai_client=mock_openai_client, # Pass the mock client
+            design_pattern=design_pattern
+        )
+
+        # Mock internal components that might be complex to set up otherwise
+        planner.content_fit_analyzer = MagicMock()
+        planner.smart_fitter = MagicMock()
+
+        # Default behavior for smart_fitter.rebalance to return slides as is
+        planner.smart_fitter.rebalance.side_effect = lambda s, ts: s
+
+        # Default behavior for content_fit_analyzer.optimize_slide_content
+        def mock_optimize_slide_content(slide, template_style):
+            from open_lilli.models import ContentFitResult, ContentDensityAnalysis
+            density_analysis = ContentDensityAnalysis(
+                total_characters=len(slide.title) + sum(len(b) for b in slide.get_bullet_texts()),
+                estimated_lines=5, # Dummy value
+                placeholder_capacity=500, # Dummy value
+                density_ratio=0.5, # Dummy value
+                requires_action=False,
+                recommended_action="none"
+            )
+            return ContentFitResult(
+                slide_index=slide.index,
+                density_analysis=density_analysis,
+                final_action="none",
+                modified_slide_plan=slide # Return the slide as is
+            )
+        planner.content_fit_analyzer.optimize_slide_content.side_effect = mock_optimize_slide_content
+
+        # Mock split_slide_content to return the slide in a list by default
+        planner.content_fit_analyzer.split_slide_content.side_effect = lambda s: [s]
+        planner.content_fit_analyzer.get_optimization_summary.return_value = {
+            "slides_requiring_action":0, "total_slides":0, "slides_split":0, "slides_font_adjusted":0
+        }
+
+
+        return planner
+
+    @pytest.mark.parametrize("planner_with_design_pattern", [{"name": "minimalist", "primary_intent": "readability"}], indirect=True)
+    def test_minimalist_design_reduces_max_bullets(self, planner_with_design_pattern: SlidePlanner):
+        """Test that 'minimalist' design reduces max_bullets_per_slide and causes splitting."""
+        planner = planner_with_design_pattern
+        outline = Outline(
+            title="Test Outline",
+            slides=[
+                SlidePlan(index=0, slide_type="title", title="Title Slide", bullets=[]),
+                SlidePlan(index=1, slide_type="content", title="Content Slide 1", bullets=["B1", "B2", "B3", "B4"]) # 4 bullets
+            ]
+        )
+        original_config = GenerationConfig(max_bullets_per_slide=5, include_images=False, include_charts=False)
+
+        # With minimalist design, max_bullets should be 5 - 2 = 3. So, slide with 4 bullets should be marked for splitting.
+
+        # Mock the _split_slide method to check it's called as expected due to reduced bullet limit
+        # or check needs_splitting flag
+
+        planned_slides = planner.plan_slides(outline, original_config)
+
+        # Effective max_bullets should be 3. Slide 1 has 4 bullets.
+        # The _optimize_slide_sequence method should handle the splitting.
+        # We need to ensure that the logic inside _plan_individual_slide sets needs_splitting=True
+
+        slide1_planned = next(s for s in planned_slides if s.title == "Content Slide 1 (Part 1)" or s.title == "Content Slide 1")
+
+        # Check if the original config was modified
+        assert original_config.max_bullets_per_slide == 5
+
+        # Check if the slide was marked for splitting or actually split
+        # If it was split, there will be more slides than in the original outline for that content.
+        content_slides = [s for s in planned_slides if "Content Slide 1" in s.title]
+        assert len(content_slides) > 1, "Slide should have been split due to reduced bullet limit from minimalist design."
+        assert content_slides[0].bullets == ["B1", "B2", "B3"]
+        assert content_slides[1].bullets == ["B4"]
+
+
+    @pytest.mark.parametrize("planner_with_design_pattern", [{"name": "standard"}], indirect=True)
+    def test_standard_design_uses_default_max_bullets(self, planner_with_design_pattern: SlidePlanner):
+        """Test that 'standard' design uses the default max_bullets_per_slide."""
+        planner = planner_with_design_pattern
+        outline = Outline(
+            title="Test Outline",
+            slides=[
+                SlidePlan(index=0, slide_type="title", title="Title Slide", bullets=[]),
+                SlidePlan(index=1, slide_type="content", title="Content Slide 1", bullets=["B1", "B2", "B3", "B4"]) # 4 bullets
+            ]
+        )
+        original_config = GenerationConfig(max_bullets_per_slide=5, include_images=False, include_charts=False)
+
+        planned_slides = planner.plan_slides(outline, original_config)
+
+        # Check if the original config was modified
+        assert original_config.max_bullets_per_slide == 5
+
+        # Slide should not be split as 4 bullets <= 5 (default limit)
+        content_slides = [s for s in planned_slides if "Content Slide 1" in s.title]
+        assert len(content_slides) == 1, "Slide should not have been split with standard design."
+        assert content_slides[0].bullets == ["B1", "B2", "B3", "B4"]
+        assert not getattr(content_slides[0], 'needs_splitting', False)
+
+
+    @pytest.mark.parametrize("planner_with_design_pattern", [{"name": "vibrant", "primary_intent": "visual_impact"}], indirect=True)
+    def test_other_design_intent_uses_default_max_bullets(self, planner_with_design_pattern: SlidePlanner):
+        """Test that non-minimalist/readability designs use default max_bullets_per_slide."""
+        planner = planner_with_design_pattern
+        outline = Outline(
+            title="Test Outline",
+            slides=[
+                SlidePlan(index=0, slide_type="title", title="Title Slide", bullets=[]),
+                SlidePlan(index=1, slide_type="content", title="Content Slide 1", bullets=["B1", "B2", "B3", "B4"]) # 4 bullets
+            ]
+        )
+        original_config = GenerationConfig(max_bullets_per_slide=5, include_images=False, include_charts=False)
+
+        planned_slides = planner.plan_slides(outline, original_config)
+
+        assert original_config.max_bullets_per_slide == 5
+        content_slides = [s for s in planned_slides if "Content Slide 1" in s.title]
+        assert len(content_slides) == 1, "Slide should not have been split."
+        assert not getattr(content_slides[0], 'needs_splitting', False)
+
+    def test_plan_slides_no_design_pattern(self, planner_with_design_pattern: SlidePlanner):
+        """Test plan_slides when no design_pattern is provided to SlidePlanner."""
+        # This test will use the planner_with_design_pattern fixture,
+        # but the default for "param" in the fixture is {} which results in design_pattern=None
+        planner = planner_with_design_pattern # design_pattern will be None here
+        assert planner.design_pattern is None
+
+        outline = Outline(
+            title="Test Outline",
+            slides=[
+                SlidePlan(index=0, slide_type="title", title="Title Slide", bullets=[]),
+                SlidePlan(index=1, slide_type="content", title="Content Slide 1", bullets=["B1", "B2", "B3", "B4"]) # 4 bullets
+            ]
+        )
+        original_config = GenerationConfig(max_bullets_per_slide=5, include_images=False, include_charts=False)
+
+        planned_slides = planner.plan_slides(outline, original_config)
+
+        assert original_config.max_bullets_per_slide == 5
+        content_slides = [s for s in planned_slides if "Content Slide 1" in s.title]
+        assert len(content_slides) == 1, "Slide should not have been split when no design pattern is active."
+        assert not getattr(content_slides[0], 'needs_splitting', False)

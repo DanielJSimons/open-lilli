@@ -1139,3 +1139,74 @@ class VisualExcellenceConfig(BaseModel):
                 "enable_generative_ai": False
             }
         }
+
+
+class TemplateCompatibilityReport(BaseModel):
+    """Report on the compatibility of a PowerPoint template."""
+
+    issues: List[str] = Field(default_factory=list, description="General issues found with the template")
+    suggestions: List[str] = Field(default_factory=list, description="Suggestions for improving template compatibility")
+    missing_placeholders: List[str] = Field(
+        default_factory=list, description="List of common placeholder types missing from the template"
+    )
+    color_scheme_warnings: List[str] = Field(
+        default_factory=list, description="Issues found in the theme's color palette"
+    )
+    contrast_issues: List[str] = Field(
+        default_factory=list, description="Specific color pairs with insufficient contrast"
+    )
+    passed_all_checks: bool = Field(
+        default=True, description="True if the template passed all critical compatibility checks"
+    )
+
+    class Config:
+        """Pydantic configuration."""
+
+        json_schema_extra = {
+            "example": {
+                "issues": ["Template usability is limited due to missing common placeholders."],
+                "suggestions": ["Add a 'content' placeholder to most slide layouts.", "Ensure 'dk1' and 'lt1' theme colors have good contrast."],
+                "missing_placeholders": ["content", "image"],
+                "color_scheme_warnings": ["Theme color 'dk1' is not defined or is identical to 'lt1'."],
+                "contrast_issues": ["Color 'dk1' (#808080) and 'lt1' (#FFFFFF) have a contrast ratio of 2.1:1, which is too low for text."],
+                "passed_all_checks": False
+            }
+        }
+
+
+class DesignPattern(BaseModel):
+    """Describes the inferred design pattern of a template."""
+
+    name: str = Field(
+        default="standard",
+        description="Overall name of the design pattern (e.g., 'minimalist', 'standard', 'vibrant', 'data-heavy')"
+    )
+    font_scale_ratio: float = Field(
+        default=1.8,
+        description="Ratio of title font size to body font size (e.g., title_font / body_font). Default is typical for standard designs."
+    )
+    color_complexity_score: float = Field(
+        default=0.5,
+        description="Score from 0.0 (very simple, dk1/lt1 mainly) to 1.0 (complex, many distinct accent colors used) based on palette."
+    )
+    layout_density_preference: str = Field(
+        default="medium",
+        description="Preferred layout density: 'low', 'medium', or 'high'."
+    )
+    primary_intent: str = Field(
+        default="balanced",
+        description="Inferred primary intent of the design (e.g., 'readability', 'visual_impact', 'information_density', 'balanced')."
+    )
+
+    class Config:
+        """Pydantic configuration."""
+
+        json_schema_extra = {
+            "example": {
+                "name": "vibrant",
+                "font_scale_ratio": 2.0,
+                "color_complexity_score": 0.8,
+                "layout_density_preference": "medium",
+                "primary_intent": "visual_impact"
+            }
+        }
