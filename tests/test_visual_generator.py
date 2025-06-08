@@ -2,7 +2,8 @@
 
 import tempfile
 from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock, call, ANY # ensure 'call' and 'ANY' is imported
+import unittest
+from unittest.mock import Mock, patch, MagicMock, call, ANY  # ensure 'call' and 'ANY' is imported
 
 import pytest
 from PIL import Image
@@ -49,10 +50,10 @@ STABLE_DIFFUSION_CONFIG = AssetLibraryConfig(
 )
 
 
-class TestVisualGenerator:
+class TestVisualGenerator(unittest.TestCase):
     """Tests for VisualGenerator class."""
 
-    def setup_method(self):
+    def setUp(self):
         """Set up test fixtures."""
         self.temp_dir = tempfile.mkdtemp()
         # Default generator for most tests
@@ -73,7 +74,7 @@ class TestVisualGenerator:
              self.gen_ai_generator.corporate_asset_library = CorporateAssetLibrary(gen_ai_visual_config.asset_library)
 
 
-    def teardown_method(self):
+    def tearDown(self):
         """Clean up test fixtures."""
         # Clean up generated files
         import shutil
