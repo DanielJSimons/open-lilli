@@ -530,6 +530,12 @@ class SlideAssembler:
                         for para in title_shape.text_frame.paragraphs:
                             para.alignment = PP_ALIGN.RIGHT
 
+                # Apply auto-fit text if enabled
+                if self.overflow_config.enable_auto_fit_text:
+                    if hasattr(title_shape, 'text_frame') and title_shape.text_frame:
+                        title_shape.text_frame.auto_size = MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE
+                        logger.debug(f"Applied TEXT_TO_FIT_SHAPE to title placeholder due to enable_auto_fit_text=True.")
+
                 logger.debug(f"Added title: {title}")
             else:
                 logger.warning("No title placeholder found in slide")
@@ -959,6 +965,11 @@ class SlideAssembler:
             for para in text_frame.paragraphs:
                 if para.text and para.text.strip(): # Only align if paragraph has text
                     para.alignment = PP_ALIGN.RIGHT
+
+        # Apply auto-fit text if enabled
+        if self.overflow_config.enable_auto_fit_text:
+            text_frame.auto_size = MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE
+            logger.debug(f"Applied TEXT_TO_FIT_SHAPE to bullet placeholder due to enable_auto_fit_text=True.")
 
     def find_placeholder(self, slide, placeholder_type: int) -> Optional[object]:
         """Find a placeholder of the specified type on the slide.
