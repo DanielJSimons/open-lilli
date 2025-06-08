@@ -12,7 +12,10 @@
       "Bash(rg:*)",
       "Bash(find:*)",
       "Bash(poetry install:*)",
-      "Bash(source:*)"
+      "Bash(source:*)",
+      "Bash(ai-ppt generate:*)",
+      "Bash(/home/dsimons/.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg \"rebalance\\(\" -A 3 -B 3)",
+      "Bash(/home/dsimons/.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg \"class SlidePlan\" -A 30)"
     ],
     "deny": []
   }

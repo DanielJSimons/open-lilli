@@ -406,7 +406,7 @@ class ContentFitAnalyzer:
             modified_slide_plan=current_modified_slide_plan
         )
 
-    async def rewrite_content_shorter(
+    def rewrite_content_shorter(
         self,
         slide: SlidePlan,
         target_reduction: float = 0.3
@@ -800,6 +800,10 @@ class SmartContentFitter:
             test_source = source_slide.model_copy()
             test_target = target_slide.model_copy()
             
+            # Safety check: ensure test_source has bullets to pop
+            if not test_source.bullets:
+                break
+                
             # Move the last bullet (usually least critical)
             bullet_to_move = test_source.bullets.pop()
             test_target.bullets.append(bullet_to_move)
@@ -821,6 +825,10 @@ class SmartContentFitter:
                 source_improvement > target_degradation):
                 
                 # Apply the move to actual slides
+                # Safety check: ensure source_slide still has bullets to pop
+                if not source_slide.bullets:
+                    break
+                    
                 moved_bullet = source_slide.bullets.pop()
                 target_slide.bullets.append(moved_bullet)
                 bullets_moved += 1
