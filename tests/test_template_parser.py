@@ -2,13 +2,13 @@
 
 import tempfile
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, patch, MagicMock
 
 import pytest
 from pptx import Presentation
 
 from open_lilli.template_parser import TemplateParser
-from open_lilli.models import TemplateStyle, FontInfo, BulletInfo, PlaceholderStyleInfo
+from open_lilli.models import TemplateStyle, FontInfo, BulletInfo, PlaceholderStyleInfo, DesignPattern
 
 
 class TestTemplateParser:
@@ -41,6 +41,325 @@ class TestTemplateParser:
             
         finally:
             Path(template_path).unlink()
+
+
+    # --- Tests for analyze_design_pattern ---
+
+    @pytest.fixture
+    def design_mock_parser(self) -> TemplateParser:
+        """
+        Creates a TemplateParser instance with mocks tailored for design pattern analysis.
+        This fixture avoids using parametrize with the more general mock_parser if test setup is complex.
+        """
+        template_path = self.create_test_template()
+        parser = TemplateParser(template_path) # Real parser for basic structure
+
+        # Mock template_style and its methods
+        parser.template_style = MagicMock(spec=TemplateStyle)
+
+        # Default mocks for fonts - these can be overridden in each test
+        default_title_font = FontInfo(name="Arial", size=32.0, weight="bold", color="#000000")
+        default_body_font = FontInfo(name="Arial", size=18.0, weight="normal", color="#000000")
+
+        def mock_get_font(ph_type):
+            if ph_type == 1 or ph_type == 13: # TITLE or CENTERED_TITLE
+                return getattr(parser.template_style, '_mock_title_font', default_title_font)
+            if ph_type == 2 or ph_type == 7: # BODY or OBJECT
+                return getattr(parser.template_style, '_mock_body_font', default_body_font)
+            return None
+        parser.template_style.get_font_for_placeholder_type = MagicMock(side_effect=mock_get_font)
+
+        # Default mocks for palette and layout_map - override in tests as needed
+        parser.palette = {"dk1": "#111111", "lt1": "#EEEEEE", "acc1": "#FF0000"}
+        parser.layout_map = {"title":0, "content":1, "section":2, "image_content":3, "blank":4}
+        parser.reverse_layout_map = {v: k for k, v in parser.layout_map.items()}
+
+        yield parser
+
+        Path(template_path).unlink(missing_ok=True)
+
+
+    def test_design_pattern_minimalist(self, design_mock_parser: TemplateParser):
+        # Configure for minimalist
+        design_mock_parser.template_style._mock_title_font = FontInfo(name="Segoe UI", size=24.0)
+        design_mock_parser.template_style._mock_body_font = FontInfo(name="Segoe UI", size=18.0) # Low ratio: 24/18 = 1.33
+        design_mock_parser.palette = {"dk1": "#202020", "lt1": "#F0F0F0"} # Only base colors, no accents
+        design_mock_parser.layout_map = {"title": 0, "content": 1, "section": 2, "blank": 3} # Simple layouts
+
+        pattern = design_mock_parser.analyze_design_pattern()
+
+        assert pattern is not None
+        assert pattern.name == "minimalist"
+        assert pattern.primary_intent == "readability"
+        assert pattern.font_scale_ratio == pytest.approx(1.33)
+        assert pattern.color_complexity_score == pytest.approx(0.2) # Low
+        assert pattern.layout_density_preference == "low"
+
+    def test_design_pattern_vibrant(self, design_mock_parser: TemplateParser):
+        # Configure for vibrant
+        design_mock_parser.template_style._mock_title_font = FontInfo(name="Impact", size=48.0)
+        design_mock_parser.template_style._mock_body_font = FontInfo(name="Arial", size=20.0) # High ratio: 48/20 = 2.4
+        design_mock_parser.palette = {
+            "dk1": "#000000", "lt1": "#FFFFFF",
+            "acc1": "#FF00FF", "acc2": "#00FFFF", "acc3": "#FFFF00", "acc4": "#FF6600", "acc5": "#00FF66" # 5 distinct accents
+        }
+        design_mock_parser.layout_map = {"title":0, "content":1, "image_content":2, "two_column":3, "section":4} # Mixed, some dense
+
+        pattern = design_mock_parser.analyze_design_pattern()
+
+        assert pattern is not None
+        assert pattern.name == "vibrant" # Or "bold & colorful" depending on exact thresholds
+        assert pattern.primary_intent == "visual_impact"
+        assert pattern.font_scale_ratio == pytest.approx(2.4)
+        assert pattern.color_complexity_score == pytest.approx(0.9) # High
+        assert pattern.layout_density_preference == "high" # 2 dense out of 5 is 40%
+
+    def test_design_pattern_data_heavy(self, design_mock_parser: TemplateParser):
+        # Configure for data-heavy
+        design_mock_parser.template_style._mock_title_font = FontInfo(name="Calibri", size=28.0)
+        design_mock_parser.template_style._mock_body_font = FontInfo(name="Calibri", size=16.0) # Moderate ratio: 28/16 = 1.75
+        design_mock_parser.palette = {"dk1": "#333333", "lt1": "#FFFFFF", "acc1": "#0044CC", "acc2": "#0066DD"} # Few, professional accents
+        design_mock_parser.layout_map = {
+            "title": 0, "content": 1, "two_column": 2, "section": 3,
+            "image_content":4, "layout_5_dense": 5 # Assuming layout_5_dense is also complex
+        }
+        # Manually classify "layout_5_dense" as dense for the test by adding it to dense_layout_keywords temporarily
+        # This is a bit of a hack for testing; ideally the classification in TemplateParser would handle this.
+        original_dense_keywords = design_mock_parser.dense_layout_keywords if hasattr(design_mock_parser, 'dense_layout_keywords') else ["two_column", "image_content"]
+        design_mock_parser.dense_layout_keywords = original_dense_keywords + ["layout_5_dense"]
+
+
+        pattern = design_mock_parser.analyze_design_pattern()
+
+        # Restore original keywords if they existed
+        if hasattr(design_mock_parser, 'dense_layout_keywords'):
+             design_mock_parser.dense_layout_keywords = original_dense_keywords
+
+
+        assert pattern is not None
+        assert pattern.name == "data-heavy"
+        assert pattern.primary_intent == "information_density"
+        assert pattern.font_scale_ratio == pytest.approx(1.75)
+        assert pattern.color_complexity_score == pytest.approx(0.6) # Medium
+        assert pattern.layout_density_preference == "high" # 3 dense / 6 total layouts = 50%
+
+    def test_design_pattern_standard_default(self, design_mock_parser: TemplateParser):
+        # Configure for standard/default (values that don't strongly fit other patterns)
+        design_mock_parser.template_style._mock_title_font = FontInfo(name="Arial", size=36.0)
+        design_mock_parser.template_style._mock_body_font = FontInfo(name="Arial", size=20.0) # Ratio: 1.8
+        design_mock_parser.palette = {"dk1": "#000000", "lt1": "#FFFFFF", "acc1": "#007ACC", "acc2": "#CCCCCC"} # 1-2 accents
+        design_mock_parser.layout_map = {"title":0, "content":1, "section":2, "image":3, "blank":4} # Mostly simple
+
+        pattern = design_mock_parser.analyze_design_pattern()
+
+        assert pattern is not None
+        assert pattern.name == "standard"
+        assert pattern.primary_intent == "balanced" # Or "clarity" if color complexity is low enough
+        assert pattern.font_scale_ratio == pytest.approx(1.8)
+        assert pattern.color_complexity_score == pytest.approx(0.6) # Medium (acc1 is distinct, acc2 might be too close to lt1 or dk1 to count depending on implementation)
+        assert pattern.layout_density_preference == "low" # No explicitly "dense" layouts listed
+
+    def test_design_pattern_missing_font_info(self, design_mock_parser: TemplateParser):
+        # Configure for missing font info
+        design_mock_parser.template_style._mock_title_font = None # Title font missing
+        design_mock_parser.template_style._mock_body_font = FontInfo(name="Times New Roman", size=16.0)
+        design_mock_parser.palette = {"dk1": "#111", "lt1": "#EEE", "acc1": "#ABC"}
+        design_mock_parser.layout_map = {"title": 0, "content": 1}
+
+        pattern = design_mock_parser.analyze_design_pattern()
+
+        assert pattern is not None
+        assert pattern.name == "standard" # Should default gracefully
+        assert pattern.font_scale_ratio == pytest.approx(1.8) # Default ratio when one font is missing
+        assert pattern.color_complexity_score == pytest.approx(0.6) # Medium (1 distinct accent)
+        assert pattern.layout_density_preference == "low"
+
+    def test_design_pattern_both_fonts_missing(self, design_mock_parser: TemplateParser):
+        design_mock_parser.template_style._mock_title_font = None
+        design_mock_parser.template_style._mock_body_font = None
+
+        pattern = design_mock_parser.analyze_design_pattern()
+        assert pattern is not None
+        assert pattern.name == "standard"
+        assert pattern.font_scale_ratio == pytest.approx(1.8) # Default
+        assert pattern.color_complexity_score == pytest.approx(0.6) # Based on default palette in fixture
+        assert pattern.layout_density_preference == "low" # Based on default layout_map in fixture if not overridden
+
+    def test_design_pattern_edge_case_no_accent_colors(self, design_mock_parser: TemplateParser):
+        design_mock_parser.palette = {"dk1": "#000000", "lt1": "#FFFFFF"} # No accents
+        pattern = design_mock_parser.analyze_design_pattern()
+        assert pattern.color_complexity_score == pytest.approx(0.2) # Low
+
+    def test_design_pattern_all_accent_colors_same_as_base(self, design_mock_parser: TemplateParser):
+        design_mock_parser.palette = {
+            "dk1": "#000000", "lt1": "#FFFFFF",
+            "acc1": "#000000", "acc2": "#FFFFFF", "acc3": "#000001", "acc4": "#FFFFFE" # Last two are very similar
+        }
+        pattern = design_mock_parser.analyze_design_pattern()
+        # acc3 and acc4 might be counted if the similarity check is loose, or not if strict.
+        # Based on current logic (1 char diff allowed), they might not be distinct enough from base.
+        # If #000001 is not distinct from #000000, and #FFFFFE not from #FFFFFF, then score is 0.2
+        assert pattern.color_complexity_score == pytest.approx(0.2)
+
+    def test_design_pattern_no_layouts(self, design_mock_parser: TemplateParser):
+        design_mock_parser.layout_map = {}
+        design_mock_parser.reverse_layout_map = {}
+        pattern = design_mock_parser.analyze_design_pattern()
+        assert pattern.layout_density_preference == "medium" # Default
+
+
+    # --- Tests for TemplateCompatibilityReport ---
+
+    @pytest.fixture
+    def mock_parser(self, request) -> TemplateParser:
+        """Creates a mock TemplateParser for compatibility tests."""
+        # Create a real TemplateParser instance with a minimal template
+        # to ensure all basic structures are initialized.
+        template_path = self.create_test_template()
+        parser = TemplateParser(template_path)
+
+        # Default mocks - can be overridden by individual tests using request.param
+        default_layout_map = {"title": 0, "content": 1, "section": 2, "image": 3, "blank": 4}
+        default_palette = {
+            "dk1": "#000000", "lt1": "#FFFFFF", "acc1": "#FF0000",
+            "acc2": "#00FF00", "acc3": "#0000FF"
+        }
+
+        # Apply parameters if provided by the test
+        layout_map_override = getattr(request, "param", {}).get("layout_map")
+        palette_override = getattr(request, "param", {}).get("palette")
+
+        parser.layout_map = layout_map_override if layout_map_override is not None else default_layout_map
+        parser.palette = palette_override if palette_override is not None else default_palette
+
+        # Ensure reverse map is also updated
+        parser.reverse_layout_map = {v: k for k, v in parser.layout_map.items()}
+
+        yield parser # Provide the parser to the test
+
+        # Teardown: remove the temp template file
+        Path(template_path).unlink(missing_ok=True)
+
+
+    def test_compatibility_good_template(self, mock_parser: TemplateParser):
+        """Test with a well-formed template."""
+        report = mock_parser.check_template_compatibility()
+        assert report.passed_all_checks is True
+        assert not report.issues
+        assert not report.missing_placeholders
+        assert not report.color_scheme_warnings
+        assert not report.contrast_issues
+        assert "Template appears to meet basic compatibility checks." in report.suggestions
+
+
+    @pytest.mark.parametrize("mock_parser", [{"layout_map": {"title": 0, "section": 1}}], indirect=True)
+    def test_compatibility_missing_placeholders(self, mock_parser: TemplateParser):
+        """Test with missing essential placeholders."""
+        report = mock_parser.check_template_compatibility()
+        assert report.passed_all_checks is False
+        assert "content" in report.missing_placeholders
+        assert "image" in report.missing_placeholders
+        assert "Missing essential placeholder types: content, image." in report.issues[0]
+        assert "Consider adding a 'content' layout for better versatility." in report.suggestions
+        assert "Consider adding a 'image' layout for better versatility." in report.suggestions
+
+
+    @pytest.mark.parametrize("mock_parser", [{"palette": {
+        "dk1": "#808080", # Grey
+        "lt1": "#A0A0A0", # Light Grey (low contrast with dk1)
+        "acc1": "#B0B0B0", # Another Grey (low contrast with lt1)
+    }}], indirect=True)
+    def test_compatibility_low_contrast(self, mock_parser: TemplateParser):
+        """Test with low contrast colors."""
+        report = mock_parser.check_template_compatibility()
+        assert report.passed_all_checks is False
+        assert len(report.contrast_issues) > 0
+        assert "Low contrast between 'dk1' (#808080) and 'lt1' (#A0A0A0)" in report.contrast_issues[0]
+        # acc1 vs lt1 might also be low, depending on exact calculation and other palette colors
+        assert "One or more color pairs have insufficient contrast" in report.issues[0]
+        assert "Review theme colors to ensure text is clearly readable" in report.suggestions[0]
+
+    @pytest.mark.parametrize("mock_parser", [{"palette": {
+        "dk1": "#FFFFFF", # White
+        "lt1": "#FFFFFF", # White (identical to dk1)
+        "acc1": "#0000FF",
+    }}], indirect=True)
+    def test_compatibility_identical_dk1_lt1(self, mock_parser: TemplateParser):
+        """Test with dk1 and lt1 being the same color."""
+        report = mock_parser.check_template_compatibility()
+        assert report.passed_all_checks is False
+        assert "'dk1' and 'lt1' colors are identical, which will cause contrast issues." in report.color_scheme_warnings
+        assert "Issues found with the template's color scheme definitions." in report.issues
+        # Contrast check for dk1 vs lt1 should also fail spectacularly
+        assert any("Low contrast between 'dk1' (#FFFFFF) and 'lt1' (#FFFFFF)" in issue for issue in report.contrast_issues)
+
+
+    @pytest.mark.parametrize("mock_parser", [{"palette": {
+        # dk1 is missing
+        "lt1": "#FFFFFF",
+        "acc1": "#0000FF",
+    }}], indirect=True)
+    def test_compatibility_missing_dk1(self, mock_parser: TemplateParser):
+        """Test with missing dk1 color."""
+        report = mock_parser.check_template_compatibility()
+        assert report.passed_all_checks is False
+        assert "Theme color 'dk1' (primary dark) is not defined." in report.color_scheme_warnings
+        assert "Issues found with the template's color scheme definitions." in report.issues
+        # Contrast checks involving dk1 should warn about missing color
+        assert "Color 'dk1' not found in palette for contrast check." in report.color_scheme_warnings
+
+
+    @pytest.mark.parametrize("mock_parser", [{"palette": {
+        "dk1": "#000000",
+        # lt1 is missing
+        "acc1": "#0000FF",
+    }}], indirect=True)
+    def test_compatibility_missing_lt1(self, mock_parser: TemplateParser):
+        """Test with missing lt1 color."""
+        report = mock_parser.check_template_compatibility()
+        assert report.passed_all_checks is False
+        assert "Theme color 'lt1' (primary light) is not defined." in report.color_scheme_warnings
+        assert "Issues found with the template's color scheme definitions." in report.issues
+        # Contrast checks involving lt1 should warn about missing color
+        assert "Color 'lt1' not found in palette for contrast check." in report.color_scheme_warnings
+
+
+    def test_hex_to_rgb_conversion(self, mock_parser: TemplateParser):
+        """Test _hex_to_rgb utility."""
+        assert mock_parser._hex_to_rgb("#FF0000") == (255, 0, 0)
+        assert mock_parser._hex_to_rgb("00FF00") == (0, 255, 0)
+        assert mock_parser._hex_to_rgb("#00F") == (0, 0, 255) # Shorthand
+        with pytest.raises(ValueError, match="Invalid hex color format: #12345"):
+            mock_parser._hex_to_rgb("#12345")
+        with pytest.raises(ValueError, match="Invalid character in hex color: GG0000"):
+            mock_parser._hex_to_rgb("GG0000")
+
+    def test_relative_luminance_calculation(self, mock_parser: TemplateParser):
+        """Test _relative_luminance utility."""
+        # Test pure white
+        assert mock_parser._relative_luminance((255, 255, 255)) == pytest.approx(1.0)
+        # Test pure black
+        assert mock_parser._relative_luminance((0, 0, 0)) == pytest.approx(0.0)
+        # Test a grey color
+        assert mock_parser._relative_luminance((128, 128, 128)) == pytest.approx(0.21586)
+
+    def test_contrast_ratio_calculation(self, mock_parser: TemplateParser):
+        """Test _calculate_contrast_ratio utility."""
+        # Black text on white background (max contrast)
+        assert mock_parser._calculate_contrast_ratio("#000000", "#FFFFFF") == pytest.approx(21.0)
+        # White text on black background (max contrast)
+        assert mock_parser._calculate_contrast_ratio("#FFFFFF", "#000000") == pytest.approx(21.0)
+        # Grey on white (example from WCAG)
+        assert mock_parser._calculate_contrast_ratio("#767676", "#FFFFFF") == pytest.approx(4.5, abs=0.1)
+        # Red on green (poor contrast)
+        assert mock_parser._calculate_contrast_ratio("#FF0000", "#00FF00") == pytest.approx(2.91, abs=0.01)
+        # Identical colors
+        assert mock_parser._calculate_contrast_ratio("#ABCDEF", "#ABCDEF") == pytest.approx(1.0)
+        # Invalid color should return 1.0 and log warning
+        with patch.object(mock_parser.logger, 'warning') as mock_log:
+            assert mock_parser._calculate_contrast_ratio("invalid", "#FFFFFF") == 1.0
+            mock_log.assert_called_once()
+            assert "Invalid color format for contrast calculation" in mock_log.call_args[0][0]
 
     def test_init_file_not_found(self):
         """Test initialization with non-existent file."""

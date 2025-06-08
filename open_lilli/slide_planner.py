@@ -12,7 +12,8 @@ from .models import (
     GenerationConfig, 
     Outline, 
     SlidePlan, 
-    VectorStoreConfig
+    VectorStoreConfig,
+    DesignPattern
 )
 from .template_parser import TemplateParser
 
@@ -28,7 +29,8 @@ class SlidePlanner:
         openai_client: Optional[OpenAI] = None,
         vector_config: Optional[VectorStoreConfig] = None,
         enable_ml_layouts: bool = True,
-        content_fit_config: Optional[ContentFitConfig] = None
+        content_fit_config: Optional[ContentFitConfig] = None,
+        design_pattern: Optional[DesignPattern] = None
     ):
         """
         Initialize the slide planner.
@@ -39,8 +41,10 @@ class SlidePlanner:
             vector_config: Vector store configuration for ML system
             enable_ml_layouts: Whether to use ML-assisted layout selection
             content_fit_config: Configuration for content fit analysis
+            design_pattern: Optional DesignPattern object to influence planning decisions
         """
         self.template_parser = template_parser
+        self.design_pattern = design_pattern
         self.layout_priorities = self._define_layout_priorities()
         self.enable_ml_layouts = enable_ml_layouts and openai_client is not None
         
@@ -110,25 +114,41 @@ class SlidePlanner:
         Returns:
             List of detailed slide plans with layouts assigned
         """
-        config = config or GenerationConfig()
+        current_config = (config or GenerationConfig()).model_copy()
+
+        if self.design_pattern and \
+           (self.design_pattern.name == "minimalist" or self.design_pattern.primary_intent == "readability"):
+            original_max_bullets = current_config.max_bullets_per_slide
+            # Reduce by a fixed number or percentage, ensuring it's at least 1
+            # Example: reduce by 2, or by 30%
+            reduction = 2
+            # reduction = int(current_config.max_bullets_per_slide * 0.3)
+
+            current_config.max_bullets_per_slide = max(1, original_max_bullets - reduction)
+            if current_config.max_bullets_per_slide != original_max_bullets:
+                logger.info(
+                    f"Design pattern '{self.design_pattern.name}' (intent: '{self.design_pattern.primary_intent}') "
+                    f"adjusted max_bullets_per_slide from {original_max_bullets} "
+                    f"to {current_config.max_bullets_per_slide}."
+                )
         
-        logger.info(f"Planning slides for outline with {outline.slide_count} slides")
+        logger.info(f"Planning slides for outline with {outline.slide_count} slides using effective max_bullets: {current_config.max_bullets_per_slide}")
         
         planned_slides = []
         
         for slide in outline.slides:
             # Apply planning logic
-            planned_slide = self._plan_individual_slide(slide, config)
+            planned_slide = self._plan_individual_slide(slide, current_config)
             planned_slides.append(planned_slide)
         
         # Apply global optimizations
-        planned_slides = self._optimize_slide_sequence(planned_slides, config)
+        planned_slides = self._optimize_slide_sequence(planned_slides, current_config)
         
         # Apply content fit optimization
-        planned_slides = self._optimize_content_fit(planned_slides, config)
+        planned_slides = self._optimize_content_fit(planned_slides, current_config)
         
         # Validate the plan
-        self._validate_slide_plan(planned_slides, config)
+        self._validate_slide_plan(planned_slides, current_config)
         
         logger.info(f"Successfully planned {len(planned_slides)} slides")
         return planned_slides
@@ -136,14 +156,14 @@ class SlidePlanner:
     def _plan_individual_slide(
         self, 
         slide: SlidePlan, 
-        config: GenerationConfig
+        current_config: GenerationConfig # Use the potentially modified config
     ) -> SlidePlan:
         """
         Plan an individual slide with enhanced details.
         
         Args:
             slide: Original slide plan
-            config: Generation configuration
+            current_config: Generation configuration (possibly adjusted by design pattern)
             
         Returns:
             Enhanced slide plan
@@ -164,19 +184,20 @@ class SlidePlanner:
         
         # Mark slides that need splitting - removal of hard truncation (T-100: Support hierarchical bullets)
         bullet_texts = planned_slide.get_bullet_texts()
-        if len(bullet_texts) > config.max_bullets_per_slide and config.max_bullets_per_slide > 0:
+        # Use current_config here
+        if len(bullet_texts) > current_config.max_bullets_per_slide and current_config.max_bullets_per_slide > 0:
             # Mark slide for splitting in _optimize_slide_sequence rather than truncating
             planned_slide.needs_splitting = True
-            logger.info(f"Slide {slide.index}: Marked for splitting due to {len(bullet_texts)} bullets > {config.max_bullets_per_slide} limit")
+            logger.info(f"Slide {slide.index}: Marked for splitting due to {len(bullet_texts)} bullets > {current_config.max_bullets_per_slide} limit")
         
         # Enhance image queries based on content
-        if config.include_images and not planned_slide.image_query:
+        if current_config.include_images and not planned_slide.image_query: # Use current_config
             planned_slide.image_query = self._generate_image_query(planned_slide)
-        elif not config.include_images:
+        elif not current_config.include_images: # Use current_config
             planned_slide.image_query = None
         
         # Handle chart data
-        if not config.include_charts:
+        if not current_config.include_charts: # Use current_config
             planned_slide.chart_data = None
         
         # Add speaker notes if missing
