@@ -9,8 +9,15 @@ import pytest
 from pptx import Presentation
 
 from open_lilli.models import Outline, SlidePlan
+import unittest # Ensure unittest is imported, though it's standard
+from pptx.enum.text import MSO_AUTO_SIZE
+from pptx.enum.shapes import PP_PLACEHOLDER
+from pptx.util import Inches
+
 from open_lilli.slide_assembler import SlideAssembler
 from open_lilli.template_parser import TemplateParser
+# models imports from the new test class
+from open_lilli.models import StyleValidationConfig, TextOverflowConfig, BulletItem # SlidePlan, Outline already imported by existing tests if needed by them
 
 
 class TestSlideAssembler:
@@ -873,3 +880,108 @@ class TestTwoColumnBulletDistribution:
             assert len(second_call_bullets) == 3  # 7//2
             assert first_call_bullets == ["A", "B", "C", "D"]
             assert second_call_bullets == ["E", "F", "G"]
+
+
+class TestSlideAssemblerAutoFitText(unittest.TestCase):
+    def setUp(self):
+        self.mock_template_parser = Mock(spec=TemplateParser)
+        self.mock_template_parser.template_style = Mock()
+        self.mock_template_parser.template_style.language_specific_fonts = {}
+        self.mock_template_parser.get_layout_index = Mock(return_value=0)
+
+        self.toc_settings_enabled = TextOverflowConfig(enable_auto_fit_text=True)
+        self.svc_settings_enabled = StyleValidationConfig(text_overflow_config=self.toc_settings_enabled)
+
+        self.toc_settings_disabled = TextOverflowConfig(enable_auto_fit_text=False)
+        self.svc_settings_disabled = StyleValidationConfig(text_overflow_config=self.toc_settings_disabled)
+
+        self.assembler_enabled = SlideAssembler(
+            template_parser=self.mock_template_parser,
+            validation_config=self.svc_settings_enabled
+        )
+        self.assembler_disabled = SlideAssembler(
+            template_parser=self.mock_template_parser,
+            validation_config=self.svc_settings_disabled
+        )
+
+    def test_add_title_autofit_enabled(self):
+        mock_slide = Mock()
+        mock_title_shape = Mock()
+        mock_text_frame = Mock()
+
+        mock_text_frame.auto_size = MSO_AUTO_SIZE.NONE
+        mock_paragraph = Mock()
+        mock_run = Mock()
+        mock_run.font = Mock()
+        mock_paragraph.runs = [mock_run]
+        mock_text_frame.paragraphs = [mock_paragraph]
+        mock_title_shape.text_frame = mock_text_frame
+        mock_slide.shapes.title = mock_title_shape
+
+        self.assembler_enabled._add_title(mock_slide, "A very long title for testing purposes", "en")
+        self.assertEqual(mock_title_shape.text_frame.auto_size, MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE)
+
+    def test_add_title_autofit_disabled(self):
+        mock_slide = Mock()
+        mock_title_shape = Mock()
+        mock_text_frame = Mock()
+
+        mock_text_frame.auto_size = MSO_AUTO_SIZE.NONE
+        mock_paragraph = Mock()
+        mock_run = Mock()
+        mock_run.font = Mock()
+        mock_paragraph.runs = [mock_run]
+        mock_text_frame.paragraphs = [mock_paragraph]
+        mock_title_shape.text_frame = mock_text_frame
+        mock_slide.shapes.title = mock_title_shape
+
+        self.assembler_disabled._add_title(mock_slide, "A short title", "en")
+        self.assertEqual(mock_title_shape.text_frame.auto_size, MSO_AUTO_SIZE.NONE)
+
+    def test_add_bullets_autofit_enabled(self):
+        mock_placeholder = Mock()
+        mock_text_frame = Mock()
+
+        mock_text_frame.auto_size = MSO_AUTO_SIZE.NONE
+        mock_text_frame.clear = Mock()
+        mock_paragraph = Mock()
+        mock_run = Mock()
+        mock_run.font = Mock()
+        mock_run.font.size = Mock()
+        mock_run.font.name = None
+        mock_paragraph.runs = [mock_run]
+        mock_paragraph.text = ""
+        mock_text_frame.add_paragraph = Mock(return_value=mock_paragraph)
+        mock_text_frame.paragraphs = [mock_paragraph]
+        mock_placeholder.text_frame = mock_text_frame
+        # Setting a mock width for the placeholder, in case any internal logic uses it.
+        mock_placeholder.width = Inches(5)
+
+        bullet_items = [BulletItem(text="This is a very long bullet point that might overflow", level=0)]
+        self.assembler_enabled._add_hierarchical_bullets_to_placeholder(mock_placeholder, bullet_items, "en")
+        self.assertEqual(mock_placeholder.text_frame.auto_size, MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE)
+
+    def test_add_bullets_autofit_disabled(self):
+        mock_placeholder = Mock()
+        mock_text_frame = Mock()
+
+        mock_text_frame.auto_size = MSO_AUTO_SIZE.NONE
+        mock_text_frame.clear = Mock()
+        mock_paragraph = Mock()
+        mock_run = Mock()
+        mock_run.font = Mock()
+        mock_run.font.size = Mock()
+        mock_run.font.name = None
+        mock_paragraph.runs = [mock_run]
+        mock_paragraph.text = ""
+        mock_text_frame.add_paragraph = Mock(return_value=mock_paragraph)
+        mock_text_frame.paragraphs = [mock_paragraph]
+        mock_placeholder.text_frame = mock_text_frame
+        mock_placeholder.width = Inches(5)
+
+        bullet_items = [BulletItem(text="Short bullet", level=0)]
+        self.assembler_disabled._add_hierarchical_bullets_to_placeholder(mock_placeholder, bullet_items, "en")
+        self.assertEqual(mock_placeholder.text_frame.auto_size, MSO_AUTO_SIZE.NONE)
+
+if __name__ == '__main__':
+    unittest.main()

@@ -58,6 +58,7 @@ class TextOverflowConfig(BaseModel):
         default="(Cont.)",
         description="Suffix to append to the title of a slide that has been created as a result of splitting a previous slide's content due to overflow."
     )
+    enable_auto_fit_text: bool = Field(default=False, description="Enable auto-fitting of text to its shape. When True, text_frame.auto_size will be set to MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE.")
 
     class Config:
         """Pydantic configuration."""
@@ -66,7 +67,8 @@ class TextOverflowConfig(BaseModel):
             "example": {
                 "enable_bullet_splitting": True,
                 "max_lines_per_placeholder": 15,
-                "split_slide_title_suffix": "(Cont.)"
+                "split_slide_title_suffix": "(Cont.)",
+                "enable_auto_fit_text": False
             }
         }
 
@@ -581,7 +583,8 @@ class StyleValidationConfig(BaseModel):
                 "text_overflow_config": {
                     "enable_bullet_splitting": True,
                     "max_lines_per_placeholder": 15,
-                    "split_slide_title_suffix": "(Cont.)"
+                    "split_slide_title_suffix": "(Cont.)",
+                    "enable_auto_fit_text": False
                 },
                 "enable_visual_proofreader": True,
                 "visual_proofreader_focus_areas": ["capitalization", "consistency"],
