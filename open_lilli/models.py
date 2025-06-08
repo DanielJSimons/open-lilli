@@ -6,6 +6,24 @@ from typing import Any, Dict, List, Optional, Union
 from enum import Enum
 
 from pydantic import BaseModel, Field
+try:
+    from open_lilli.visual_proofreader import DesignIssueType
+except ImportError: # Handle potential circular import during initialization or if file doesn't exist yet
+    class DesignIssueType(str, Enum): # Fallback definition
+        """
+        Fallback Enum for DesignIssueType.
+        Defines the types of design issues that VisualProofreader can identify.
+        This fallback is used if `open_lilli.visual_proofreader.DesignIssueType` cannot be imported,
+        preventing circular dependencies during initialization while still providing type hinting.
+        """
+        CAPITALIZATION = "capitalization"
+        FORMATTING = "formatting"
+        CONSISTENCY = "consistency"
+        ALIGNMENT = "alignment"
+        SPACING = "spacing"
+        TYPOGRAPHY = "typography"
+        COLOR = "color"
+        HIERARCHY = "hierarchy"
 
 
 class BulletItem(BaseModel):
@@ -21,6 +39,79 @@ class BulletItem(BaseModel):
             "example": {
                 "text": "Main bullet point",
                 "level": 0
+            }
+        }
+
+
+class QualityGates(BaseModel):
+    """Configuration for quality gate thresholds in presentation review."""
+
+    max_bullets_per_slide: int = Field(
+        default=7,
+        description="Maximum number of bullet points allowed per slide"
+    )
+    max_readability_grade: float = Field(
+        default=9.0,
+        description="Maximum readability grade level (higher is more complex)"
+    )
+    max_style_errors: int = Field(
+        default=0,
+        description="Maximum number of style errors allowed"
+    )
+    min_overall_score: float = Field(
+        default=7.0,
+        description="Minimum overall quality score required (0-10 scale)"
+    )
+    min_contrast_ratio: float = Field(
+        default=4.5,
+        description="DEPRECATED: Minimum acceptable contrast ratio for text (WCAG AA for normal text). Use min_apca_lc_for_body_text instead."
+    )
+    min_apca_lc_for_body_text: float = Field(
+        default=45.0,
+        description="Minimum acceptable absolute APCA Lc value for body text. Scores below this threshold are typically flagged."
+    )
+    enable_alignment_check: bool = Field(
+        default=True,
+        description="Enable check for shape alignment within slide margins."
+    )
+    enable_overset_text_check: bool = Field(
+        default=True,
+        description="Enable check for overset or hidden text in shapes."
+    )
+    slide_margin_top_inches: float = Field(
+        default=0.5,
+        description="Top margin of the slide in inches."
+    )
+    slide_margin_bottom_inches: float = Field(
+        default=0.5,
+        description="Bottom margin of the slide in inches."
+    )
+    slide_margin_left_inches: float = Field(
+        default=0.5,
+        description="Left margin of the slide in inches."
+    )
+    slide_margin_right_inches: float = Field(
+        default=0.5,
+        description="Right margin of the slide in inches."
+    )
+
+    class Config:
+        """Pydantic configuration."""
+
+        json_schema_extra = {
+            "example": {
+                "max_bullets_per_slide": 7,
+                "max_readability_grade": 9.0,
+                "max_style_errors": 0,
+                "min_overall_score": 7.0,
+                "min_contrast_ratio": 4.5, # Kept for now for backward compatibility examples if any
+                "min_apca_lc_for_body_text": 45.0,
+                "enable_alignment_check": True,
+                "enable_overset_text_check": True,
+                "slide_margin_top_inches": 0.5,
+                "slide_margin_bottom_inches": 0.5,
+                "slide_margin_left_inches": 0.5,
+                "slide_margin_right_inches": 0.5
             }
         }
 
@@ -212,18 +303,22 @@ class GenerationConfig(BaseModel):
 
 
 class ReviewFeedback(BaseModel):
-    """Feedback from the AI reviewer."""
+    """
+    Standardized model for feedback items from various validation and review processes.
+    This includes rule-based style checks (e.g., font, alignment, placeholder population)
+    and LLM-based visual proofreading results.
+    """
 
-    slide_index: int = Field(..., description="Index of the slide being reviewed")
+    slide_index: int = Field(..., description="0-based index of the slide to which this feedback applies. Can be -1 for presentation-level feedback or errors not specific to a single slide.")
     severity: str = Field(
-        ..., description="Severity level (low, medium, high, critical)"
+        ..., description="Severity level of the identified issue (e.g., 'low', 'medium', 'high', 'critical'). Helps prioritize fixes."
     )
     category: str = Field(
-        ..., description="Category of feedback (content, flow, design, etc.)"
+        ..., description="Broad category of the feedback (e.g., 'placeholder_population', 'text_overflow', 'alignment', 'accessibility', 'design', 'style_validation_font', 'visual_proofreader_error')."
     )
-    message: str = Field(..., description="Detailed feedback message")
+    message: str = Field(..., description="Detailed message describing the specific issue or feedback point.")
     suggestion: Optional[str] = Field(
-        None, description="Suggested improvement"
+        None, description="An optional suggested improvement, fix, or action to take to address the issue."
     )
 
     class Config:
@@ -384,18 +479,41 @@ class StyleValidationConfig(BaseModel):
     check_alignment: bool = Field(
         default=True, description="Verify proper alignment of elements"
     )
-    check_accessibility: bool = Field(
-        default=True, description="Perform basic accessibility checks (e.g., alt text for images)"
+    check_alt_text_accessibility: bool = Field(
+        default=True, description="Perform rule-based accessibility check for image alt text (verifies presence and non-generic content of shape names for pictures)."
     )
     autofix_text_overflow: bool = Field(
-        default=True, description="Enable auto-fixing of text overflow issues"
+        default=True, description="Enable automatic attempts to fix text overflow by reducing font size or truncating title text."
     )
     autofix_alignment: bool = Field(
-        default=True, description="Enable auto-fixing of alignment issues"
+        default=True, description="Enable automatic attempts to fix shape alignment issues by moving or resizing shapes to fit within defined slide margins."
     )
     quality_gates_config: Optional[QualityGates] = Field(
         default_factory=QualityGates,
-        description="Configuration for quality gates, including slide margins for alignment checks."
+        description="Configuration for quality gates, including slide margins which are crucial for alignment checks."
+    )
+
+    # Visual Proofreader specific settings
+    enable_visual_proofreader: bool = Field(
+        default=False,
+        description="Enable LLM-based visual proofreading for broader design consistency, formatting, and other visual aspects beyond rule-based checks."
+    )
+    visual_proofreader_focus_areas: Optional[List[DesignIssueType]] = Field(
+        default=None,
+        description="Optional list of specific `DesignIssueType` areas (e.g., 'CAPITALIZATION', 'ALIGNMENT') for the VisualProofreader to concentrate on. If None, the proofreader typically uses its own default set of focus areas."
+    )
+    visual_proofreader_model: str = Field(
+        default="gpt-4",
+        description="Specifies the LLM model to be used by the VisualProofreader (e.g., 'gpt-4', 'gpt-4-turbo-preview'). Model choice can impact quality, speed, and cost."
+    )
+    visual_proofreader_temperature: float = Field(
+        default=0.1,
+        ge=0.0, le=2.0,
+        description="Controls the randomness of the LLM's output for VisualProofreader. Lower values (e.g., 0.1) produce more deterministic and consistent results, suitable for validation tasks."
+    )
+    visual_proofreader_enable_corrections: bool = Field(
+        default=True,
+        description="Allows the VisualProofreader to suggest textual corrections for detected issues, where applicable (e.g., suggesting a correctly capitalized title)."
     )
     
     class Config:
@@ -418,7 +536,7 @@ class StyleValidationConfig(BaseModel):
                 "check_placeholder_population": True,
                 "check_text_overflow": True,
                 "check_alignment": True,
-                "check_accessibility": True,
+                "check_alt_text_accessibility": True, # Renamed
                 "autofix_text_overflow": True,
                 "autofix_alignment": True,
                 "quality_gates_config": {
@@ -426,8 +544,13 @@ class StyleValidationConfig(BaseModel):
                     "slide_margin_bottom_inches": 0.5,
                     "slide_margin_left_inches": 0.5,
                     "slide_margin_right_inches": 0.5,
-                    "enable_alignment_check": True # Example field from QualityGates
-                }
+                    "enable_alignment_check": True
+                },
+                "enable_visual_proofreader": True,
+                "visual_proofreader_focus_areas": ["capitalization", "consistency"],
+                "visual_proofreader_model": "gpt-4-turbo-preview",
+                "visual_proofreader_temperature": 0.2,
+                "visual_proofreader_enable_corrections": True
             }
         }
 
