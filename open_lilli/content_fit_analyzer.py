@@ -445,7 +445,7 @@ REQUIREMENTS:
 - Return only the rewritten bullets, one per line with • prefix"""
 
             response = self.client.chat.completions.create(
-                model="gpt-4",
+                model="gpt-4.1",
                 messages=[
                     {"role": "system", "content": "You are an expert at writing concise, impactful bullet points for business presentations."},
                     {"role": "user", "content": prompt}

@@ -285,7 +285,7 @@ class Reviewer:
 
     def __init__(self,
                  client: OpenAI | AsyncOpenAI,
-                 model: str = "gpt-4",
+                 model: str = "gpt-4.1",
                  temperature: float = 0.2,
                  template_style: Optional[TemplateStyle] = None,
                  presentation: Optional[PptxPresentationType] = None): # Added presentation
@@ -979,9 +979,16 @@ Return a JSON array of specific feedback items for this slide. Include 2-4 actio
     def _supports_json_mode(self) -> bool:
         """Check if the current model supports JSON mode."""
         json_mode_models = [
-            "gpt-4", "gpt-4-0613", "gpt-4-1106-preview", "gpt-4-0125-preview",
-            "gpt-4-turbo-preview", "gpt-4-turbo", "gpt-4o", "gpt-4o-mini",
-            "gpt-3.5-turbo", "gpt-3.5-turbo-0613", "gpt-3.5-turbo-1106", "gpt-3.5-turbo-0125"
+            "gpt-4-1106-preview",
+            "gpt-4-0125-preview",
+            "gpt-4-turbo-preview",
+            "gpt-4-turbo",
+            "gpt-4o",
+            "gpt-4o-mini",
+            "gpt-4.1",
+            "gpt-3.5-turbo",
+            "gpt-3.5-turbo-1106",
+            "gpt-3.5-turbo-0125",
         ]
         return any(model in self.model for model in json_mode_models)
 

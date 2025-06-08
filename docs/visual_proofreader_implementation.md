@@ -90,7 +90,7 @@ from open_lilli.models import SlidePlan
 
 # Initialize
 client = OpenAI(api_key="your-key")
-proofreader = VisualProofreader(client, model="gpt-4")
+proofreader = VisualProofreader(client, model="gpt-4.1")
 
 # Proofread slides
 slides = [...]  # Your SlidePlan objects

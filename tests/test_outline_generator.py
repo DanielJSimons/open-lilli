@@ -21,7 +21,7 @@ class TestOutlineGenerator:
     def test_init(self):
         """Test OutlineGenerator initialization."""
         assert self.generator.client == self.mock_client
-        assert self.generator.model == "gpt-4"
+        assert self.generator.model == "gpt-4.1"
         assert self.generator.temperature == 0.3
         assert self.generator.max_retries == 3
 
@@ -80,9 +80,9 @@ class TestOutlineGenerator:
         # Verify OpenAI was called correctly
         self.mock_client.chat.completions.create.assert_called_once()
         call_args = self.mock_client.chat.completions.create.call_args
-        assert call_args[1]["model"] == "gpt-4"
+        assert call_args[1]["model"] == "gpt-4.1"
         assert call_args[1]["temperature"] == 0.3
-        assert call_args[1]["response_format"] == {"type": "json_object"}
+        assert "response_format" not in call_args[1]
 
     def test_build_outline_prompt(self):
         """Test prompt building with different configurations."""

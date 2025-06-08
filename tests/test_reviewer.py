@@ -151,7 +151,7 @@ class TestReviewer:
     def test_init(self):
         """Test Reviewer initialization."""
         assert self.minimal_reviewer.client == self.mock_client
-        assert self.minimal_reviewer.model == "gpt-4"
+        assert self.minimal_reviewer.model == "gpt-4.1"
         assert self.minimal_reviewer.temperature == 0.2
         assert self.reviewer.presentation == self.mock_presentation # Check if set
 
