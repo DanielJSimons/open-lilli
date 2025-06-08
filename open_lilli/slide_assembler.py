@@ -10,10 +10,15 @@ from pptx.enum.text import PP_ALIGN, MSO_ANCHOR, MSO_AUTO_SIZE
 from pptx.util import Inches, Pt
 from pptx.dml.color import RGBColor
 from pptx.enum.shapes import MSO_SHAPE_TYPE, PP_PLACEHOLDER
+from openai import OpenAI # For VisualProofreader initialization
 
-from .models import Outline, SlidePlan, StyleValidationConfig, FontInfo, BulletInfo, FontAdjustment, NativeChartData, BulletItem
+from .models import (
+    Outline, SlidePlan, StyleValidationConfig, FontInfo, BulletInfo, FontAdjustment,
+    NativeChartData, BulletItem, ReviewFeedback, DesignIssueType
+)
 from .template_parser import TemplateParser
 from .exceptions import StyleError, ValidationConfigError
+from .visual_proofreader import VisualProofreader # Assuming this path is correct
 
 logger = logging.getLogger(__name__)
 
@@ -39,8 +44,31 @@ class SlideAssembler:
         self.max_bullet_length = 120
         self.validation_config = validation_config or StyleValidationConfig()
         
+        # Conditionally initialize the VisualProofreader based on configuration.
+        # This allows for LLM-based checks if enabled.
+        self.visual_proofreader = None
+        if self.validation_config.enable_visual_proofreader:
+            try:
+                # Note: OpenAI client initialization. For production, consider a shared client
+                # instance managed at a higher application level. API keys are expected
+                # to be available in the environment (e.g., OPENAI_API_KEY).
+                openai_client = OpenAI()
+                self.visual_proofreader = VisualProofreader(
+                    client=openai_client,
+                    model=self.validation_config.visual_proofreader_model,
+                    temperature=self.validation_config.visual_proofreader_temperature
+                    # enable_corrections for VisualProofreader is passed during the proofread_slides call
+                )
+                logger.info(f"VisualProofreader initialized with model '{self.validation_config.visual_proofreader_model}'.")
+            except Exception as e:
+                # Gracefully handle VisualProofreader initialization errors.
+                # Validation will proceed with only rule-based checks if VP fails to initialize.
+                logger.error(f"Failed to initialize VisualProofreader: {e}. Visual proofreading will be disabled.")
+                self.visual_proofreader = None
+
         logger.info("SlideAssembler initialized")
         logger.debug(f"Style validation: {self.validation_config.enabled}, mode: {self.validation_config.mode}")
+        logger.debug(f"Visual Proofreader enabled: {self.validation_config.enable_visual_proofreader}, instance: {'present' if self.visual_proofreader else 'None'}")
 
     def assemble(
         self,
@@ -991,43 +1019,115 @@ class SlideAssembler:
         # So, language should always be valid.
 
         if not self.validation_config.enabled or self.validation_config.mode == "disabled":
-            logger.debug("Style validation disabled")
-            return
+            logger.debug("Style validation disabled, skipping all checks.")
+            return [] # Return empty list of feedback if disabled
         
-        logger.info(f"Starting presentation style validation for language: {language}")
-        violations = []
+        logger.info(f"Starting presentation style validation for language: {language}. Mode: {self.validation_config.mode}.")
+        all_feedback: List[ReviewFeedback] = []
         
-        for slide_index, slide in enumerate(prs.slides):
+        # --- Step 1: Rule-based checks ---
+        # These checks are performed on each slide using its properties.
+        logger.debug("Performing rule-based style checks...")
+        for slide_index_loop, pptx_slide_obj in enumerate(prs.slides):
             try:
-                slide_violations = self._validate_slide_style(slide, slide_index, language) # Pass language
-                violations.extend(slide_violations)
+                # _validate_slide_style now returns List[ReviewFeedback]
+                slide_specific_feedback = self._validate_slide_style(pptx_slide_obj, slide_index_loop, language)
+                all_feedback.extend(slide_specific_feedback)
             except Exception as e:
-                logger.warning(f"Failed to validate slide {slide_index}: {e}")
-                if self.validation_config.mode == "strict":
-                    violations.append({
-                        'type': 'validation_error',
-                        'description': f"Failed to validate slide {slide_index}: {e}",
-                        'slide_index': slide_index
-                    })
-        
-        if violations:
+                logger.warning(f"Error during rule-based validation for slide {slide_index_loop}: {e}")
+                all_feedback.append(ReviewFeedback(
+                    slide_index=slide_index_loop,
+                    severity="high",
+                    category="rule_based_validation_error",
+                    message=f"An unexpected error occurred during rule-based validation of slide {slide_index_loop + 1}: {e}",
+                    suggestion="Review slide content for potential issues or report this as a bug."
+                ))
+        logger.debug(f"Completed rule-based checks. {len(all_feedback)} feedback items generated so far.")
+
+        # --- Step 2: VisualProofreader checks (if enabled) ---
+        if self.visual_proofreader:
+            logger.debug("VisualProofreader is enabled. Preparing for LLM-based checks.")
+            slide_plans_for_vp: List[SlidePlan] = []
+            # Convert pptx.slide.Slide objects to SlidePlan objects for VisualProofreader.
+            # This is a simplified conversion; a more robust implementation would extract more details.
+            for i, ppt_slide in enumerate(prs.slides):
+                title_text = ppt_slide.shapes.title.text if ppt_slide.shapes.title and ppt_slide.shapes.title.has_text_frame else f"Slide {i+1}"
+                bullets_text = []
+                # Basic extraction of text from body/content placeholders.
+                for shape in ppt_slide.shapes:
+                    if shape.is_placeholder and hasattr(shape, 'placeholder_format') and \
+                       shape.placeholder_format.type in [PP_PLACEHOLDER.BODY.value, PP_PLACEHOLDER.OBJECT.value, PP_PLACEHOLDER.CONTENT.value, PP_PLACEHOLDER.TEXT_BOX.value]: # Common content placeholders
+                        if shape.has_text_frame:
+                            for para in shape.text_frame.paragraphs:
+                                if para.text.strip():
+                                    bullets_text.append(para.text.strip())
+                    elif shape.has_text_frame and not shape.is_placeholder: # Also consider non-placeholder text boxes
+                         for para in shape.text_frame.paragraphs:
+                            if para.text.strip():
+                                bullets_text.append(para.text.strip())
+
+                slide_plan_for_vp = SlidePlan(
+                    index=i,
+                    slide_type="content", # Generic type; actual type detection from pptx is complex
+                    title=title_text,
+                    bullets=bullets_text, # Uses legacy flat list of bullets
+                    # Note: Fields like bullet_hierarchy, image_query, chart_data are not populated here.
+                    # VisualProofreader will work primarily with title and bullet text.
+                )
+                slide_plans_for_vp.append(slide_plan_for_vp)
+
+            if slide_plans_for_vp:
+                try:
+                    logger.info(f"Running VisualProofreader on {len(slide_plans_for_vp)} slides with focus on: {self.validation_config.visual_proofreader_focus_areas or 'defaults'}.")
+                    vp_result = self.visual_proofreader.proofread_slides(
+                        slides=slide_plans_for_vp,
+                        focus_areas=self.validation_config.visual_proofreader_focus_areas,
+                        enable_corrections=self.validation_config.visual_proofreader_enable_corrections
+                    )
+                    if vp_result and vp_result.issues_found:
+                        vp_feedback = self.visual_proofreader.convert_to_review_feedback(vp_result.issues_found)
+                        all_feedback.extend(vp_feedback)
+                        logger.info(f"VisualProofreader added {len(vp_feedback)} feedback items.")
+                except Exception as e:
+                    logger.error(f"VisualProofreader processing failed: {e}")
+                    all_feedback.append(ReviewFeedback(
+                        slide_index=-1, # Indicates a general VisualProofreader error
+                        severity="high",
+                        category="visual_proofreader_error",
+                        message=f"VisualProofreader processing encountered an error: {e}",
+                        suggestion="Check VisualProofreader configuration, API key, and network connectivity."
+                    ))
+            else:
+                logger.info("No slides suitable for VisualProofreader were prepared (or no slides in presentation).")
+        else:
+            logger.debug("VisualProofreader is not enabled or not initialized, skipping LLM-based checks.")
+
+        # --- Step 3: Process aggregated feedback ---
+        if all_feedback:
+            logger.info(f"Total feedback items generated: {len(all_feedback)}.")
             if self.validation_config.mode == "strict":
-                error_msg = f"Style validation failed with {len(violations)} violations"
-                style_error = StyleError(error_msg, violations=violations)
-                logger.error(f"Style validation failed: {style_error}")
+                # Convert ReviewFeedback to a list of dicts for StyleError, as it expects dicts.
+                violations_for_error = [fb.model_dump() for fb in all_feedback]
+                error_msg = f"Style validation failed with {len(all_feedback)} feedback items in 'strict' mode."
+                style_error = StyleError(error_msg, violations=violations_for_error)
+                logger.error(f"Strict mode: Style validation failed. Raising StyleError.")
                 raise style_error
             elif self.validation_config.mode == "lenient":
-                logger.warning(f"Style validation found {len(violations)} violations (lenient mode)")
-                for violation in violations[:5]:  # Log first 5 violations
-                    logger.warning(f"  {violation.get('type', 'Unknown')}: {violation.get('description', 'No description')}")
-                if len(violations) > 5:
-                    logger.warning(f"  ... and {len(violations) - 5} more violations")
+                logger.warning(f"Style validation found {len(all_feedback)} feedback items (lenient mode):")
+                for i, feedback_item in enumerate(all_feedback):
+                    if i < 10: # Log details for the first 10 items
+                        logger.warning(f"  - Slide {feedback_item.slide_index + 1 if feedback_item.slide_index >=0 else 'N/A'}: [{feedback_item.category}/{feedback_item.severity}] {feedback_item.message} (Suggestion: {feedback_item.suggestion or 'N/A'})")
+                    elif i == 10:
+                        logger.warning(f"  ... and {len(all_feedback) - 10} more feedback items (not shown in detail).")
+                        break
         else:
-            logger.info("Style validation passed successfully")
+            logger.info("Style validation passed successfully (no feedback items generated).")
 
-    def _validate_slide_style(self, slide, slide_index: int, language: str) -> List[Dict[str, any]]: # Add language
+        return all_feedback
+
+    def _validate_slide_style(self, slide, slide_index: int, language: str) -> List[ReviewFeedback]:
         """
-        Validate style for a single slide.
+        Validate style for a single slide and return a list of ReviewFeedback objects.
         
         Args:
             slide: Slide object to validate
@@ -1035,23 +1135,30 @@ class SlideAssembler:
             language: Language code for the presentation
             
         Returns:
-            List of violation dictionaries
+            List of ReviewFeedback objects for the slide
         """
-        violations = []
+        slide_feedback: List[ReviewFeedback] = []
         
         for shape in slide.shapes:
             try:
-                shape_violations = self._validate_shape_style(shape, slide, slide_index, language) # Pass language and slide
-                violations.extend(shape_violations)
+                # _validate_shape_style will need to be refactored to return List[ReviewFeedback]
+                shape_feedback = self._validate_shape_style(shape, slide, slide_index, language)
+                slide_feedback.extend(shape_feedback)
             except Exception as e:
                 logger.debug(f"Failed to validate shape in slide {slide_index}: {e}")
-                continue
+                slide_feedback.append(ReviewFeedback(
+                    slide_index=slide_index,
+                    severity="medium",
+                    category="shape_validation_error",
+                    message=f"Error validating shape {shape.shape_id if hasattr(shape, 'shape_id') else 'unknown'} on slide {slide_index + 1}: {e}",
+                    suggestion="Check shape properties or content."
+                ))
         
-        # Add placeholder population check
-        population_violations = self._check_slide_placeholder_population(slide, slide_index)
-        violations.extend(population_violations)
+        # _check_slide_placeholder_population will also be refactored
+        population_feedback = self._check_slide_placeholder_population(slide, slide_index)
+        slide_feedback.extend(population_feedback)
 
-        return violations
+        return slide_feedback
 
     def _autofix_shape_alignment(self, shape, slide, slide_index: int) -> bool:
         """
@@ -1162,21 +1269,20 @@ class SlideAssembler:
             slide_index: Index of the slide.
             language: Language (passed for consistency, not directly used in this check).
         Returns:
-            A list of alignment violation dictionaries.
+            A list of ReviewFeedback objects.
         """
-        # Initial check for violations
-        initial_violations = []
+        feedback_items: List[ReviewFeedback] = []
         if not self.validation_config.check_alignment:
-            return initial_violations
+            return feedback_items
 
         qg_config = self.validation_config.quality_gates_config
         if not qg_config or not qg_config.enable_alignment_check:
             logger.debug("Alignment check skipped as it's not enabled in QualityGatesConfig or QualityGatesConfig is missing.")
-            return initial_violations
+            return feedback_items
 
         if not slide.parent or not hasattr(slide.parent, 'slide_width') or not hasattr(slide.parent, 'slide_height'):
             logger.warning("Cannot access presentation-level slide dimensions for alignment check. Skipping.")
-            return initial_violations
+            return feedback_items
 
         slide_width_emu = slide.parent.slide_width
         slide_height_emu = slide.parent.slide_height
@@ -1202,87 +1308,61 @@ class SlideAssembler:
 
         if shape.width == 0 or shape.height == 0:
             logger.debug(f"Shape '{current_shape_name_desc}' has zero width or height, skipping alignment check.")
-            return initial_violations
+            return feedback_items
 
-        # Perform initial violation detection
+        # Store initial violations before attempting autofix
+        detected_issues_before_fix: List[Tuple[str, str]] = [] # (subtype, description)
+
         if shape.left < safe_left:
-            initial_violations.append({
-                'type': 'alignment_violation', 'subtype': 'left_margin',
-                'description': f"Shape '{current_shape_name_desc}' extends beyond the left slide margin.",
-                'slide_index': slide_index, 'shape_name': current_shape_name_desc,
-                'details': f"Shape left: {shape.left:.0f} EMU, Safe left: {safe_left:.0f} EMU."})
+            detected_issues_before_fix.append(("left_margin", f"Shape '{current_shape_name_desc}' (L:{shape.left:.0f}) extends beyond the left slide margin (safe L:{safe_left:.0f})."))
         if shape.top < safe_top:
-            initial_violations.append({
-                'type': 'alignment_violation', 'subtype': 'top_margin',
-                'description': f"Shape '{current_shape_name_desc}' extends beyond the top slide margin.",
-                'slide_index': slide_index, 'shape_name': current_shape_name_desc,
-                'details': f"Shape top: {shape.top:.0f} EMU, Safe top: {safe_top:.0f} EMU."})
+            detected_issues_before_fix.append(("top_margin", f"Shape '{current_shape_name_desc}' (T:{shape.top:.0f}) extends beyond the top slide margin (safe T:{safe_top:.0f})."))
         if (shape.left + shape.width) > safe_right:
-            initial_violations.append({
-                'type': 'alignment_violation', 'subtype': 'right_margin',
-                'description': f"Shape '{current_shape_name_desc}' extends beyond the right slide margin.",
-                'slide_index': slide_index, 'shape_name': current_shape_name_desc,
-                'details': f"Shape right edge: {(shape.left + shape.width):.0f} EMU, Safe right: {safe_right:.0f} EMU."})
+            detected_issues_before_fix.append(("right_margin", f"Shape '{current_shape_name_desc}' (R edge:{(shape.left + shape.width):.0f}) extends beyond the right slide margin (safe R:{safe_right:.0f})."))
         if (shape.top + shape.height) > safe_bottom:
-            initial_violations.append({
-                'type': 'alignment_violation', 'subtype': 'bottom_margin',
-                'description': f"Shape '{current_shape_name_desc}' extends beyond the bottom slide margin.",
-                'slide_index': slide_index, 'shape_name': current_shape_name_desc,
-                'details': f"Shape bottom edge: {(shape.top + shape.height):.0f} EMU, Safe bottom: {safe_bottom:.0f} EMU."})
+            detected_issues_before_fix.append(("bottom_margin", f"Shape '{current_shape_name_desc}' (B edge:{(shape.top + shape.height):.0f}) extends beyond the bottom slide margin (safe B:{safe_bottom:.0f})."))
 
-        # Attempt autofix if violations are found and autofix is enabled
-        if initial_violations and self.validation_config.autofix_alignment:
+        if not detected_issues_before_fix:
+            return feedback_items # No violations found initially
+
+        # Attempt autofix if enabled and violations were found
+        if self.validation_config.autofix_alignment:
             logger.debug(f"Alignment violations found for '{current_shape_name_desc}' on slide {slide_index}. Attempting autofix.")
-            action_taken = self._autofix_shape_alignment(shape, slide, slide_index) # Pass only necessary args
+            action_taken = self._autofix_shape_alignment(shape, slide, slide_index)
 
             if action_taken:
                 logger.info(f"Autofix attempted for '{current_shape_name_desc}' on slide {slide_index}. Re-checking alignment.")
                 # Re-check violations on the potentially modified shape
-                final_violations = []
-                # Update shape_name_desc in case autofix changed something (though unlikely for current autofix)
-                current_shape_name_desc_after_fix = shape.name if shape.name else f"Shape ID {shape.shape_id}"
+                current_shape_name_desc_after_fix = shape.name if shape.name else f"Shape ID {shape.shape_id}" # Update name in case it changed (unlikely here)
                 if hasattr(shape, 'placeholder_format') and hasattr(shape.placeholder_format, 'type'):
                     try:
                         ph_type = shape.placeholder_format.type
-                        ph_type_name = self._get_placeholder_type_name(ph_type.value if hasattr(ph_type, 'value') else int(ph_type))
-                        current_shape_name_desc_after_fix = f"{ph_type_name} (Idx: {shape.placeholder_format.idx}, Name: {shape.name or 'Unnamed'})"
+                        ph_type_name_after = self._get_placeholder_type_name(ph_type.value if hasattr(ph_type, 'value') else int(ph_type))
+                        current_shape_name_desc_after_fix = f"{ph_type_name_after} (Idx: {shape.placeholder_format.idx}, Name: {shape.name or 'Unnamed'})"
                     except Exception: pass
 
                 if shape.left < safe_left:
-                    final_violations.append({
-                        'type': 'alignment_violation', 'subtype': 'left_margin',
-                        'description': f"Shape '{current_shape_name_desc_after_fix}' still extends beyond the left slide margin after autofix.",
-                        'slide_index': slide_index, 'shape_name': current_shape_name_desc_after_fix,
-                        'details': f"Shape left: {shape.left:.0f} EMU, Safe left: {safe_left:.0f} EMU."})
+                    feedback_items.append(ReviewFeedback(slide_index=slide_index, severity="low", category="alignment", message=f"Shape '{current_shape_name_desc_after_fix}' still extends beyond the left slide margin after autofix (L:{shape.left:.0f}, Safe L:{safe_left:.0f}).", suggestion="Manual adjustment needed."))
                 if shape.top < safe_top:
-                    final_violations.append({
-                        'type': 'alignment_violation', 'subtype': 'top_margin',
-                        'description': f"Shape '{current_shape_name_desc_after_fix}' still extends beyond the top slide margin after autofix.",
-                        'slide_index': slide_index, 'shape_name': current_shape_name_desc_after_fix,
-                        'details': f"Shape top: {shape.top:.0f} EMU, Safe top: {safe_top:.0f} EMU."})
+                    feedback_items.append(ReviewFeedback(slide_index=slide_index, severity="low", category="alignment", message=f"Shape '{current_shape_name_desc_after_fix}' still extends beyond the top slide margin after autofix (T:{shape.top:.0f}, Safe T:{safe_top:.0f}).", suggestion="Manual adjustment needed."))
                 if (shape.left + shape.width) > safe_right:
-                    final_violations.append({
-                        'type': 'alignment_violation', 'subtype': 'right_margin',
-                        'description': f"Shape '{current_shape_name_desc_after_fix}' still extends beyond the right slide margin after autofix.",
-                        'slide_index': slide_index, 'shape_name': current_shape_name_desc_after_fix,
-                        'details': f"Shape right edge: {(shape.left + shape.width):.0f} EMU, Safe right: {safe_right:.0f} EMU."})
+                    feedback_items.append(ReviewFeedback(slide_index=slide_index, severity="low", category="alignment", message=f"Shape '{current_shape_name_desc_after_fix}' still extends beyond the right slide margin after autofix (R edge:{(shape.left + shape.width):.0f}, Safe R:{safe_right:.0f}).", suggestion="Manual adjustment needed."))
                 if (shape.top + shape.height) > safe_bottom:
-                    final_violations.append({
-                        'type': 'alignment_violation', 'subtype': 'bottom_margin',
-                        'description': f"Shape '{current_shape_name_desc_after_fix}' still extends beyond the bottom slide margin after autofix.",
-                        'slide_index': slide_index, 'shape_name': current_shape_name_desc_after_fix,
-                        'details': f"Shape bottom edge: {(shape.top + shape.height):.0f} EMU, Safe bottom: {safe_bottom:.0f} EMU."})
+                    feedback_items.append(ReviewFeedback(slide_index=slide_index, severity="low", category="alignment", message=f"Shape '{current_shape_name_desc_after_fix}' still extends beyond the bottom slide margin after autofix (B edge:{(shape.top + shape.height):.0f}, Safe B:{safe_bottom:.0f}).", suggestion="Manual adjustment needed."))
 
-                if not final_violations:
+                if not feedback_items: # No violations after autofix
                     logger.info(f"All alignment issues appear fixed for '{current_shape_name_desc_after_fix}' on slide {slide_index}.")
-                else:
+                else: # Some violations persist
                     logger.warning(f"Autofix did not resolve all alignment issues for '{current_shape_name_desc_after_fix}' on slide {slide_index}.")
-                return final_violations
-            else: # Autofix was enabled but took no action (e.g. shape already too small)
+            else: # Autofix enabled but no action_taken (e.g., resize would make shape too small)
                 logger.debug(f"Autofix enabled but no specific action taken for '{current_shape_name_desc}' on slide {slide_index}. Reporting original violations.")
-                return initial_violations
+                for subtype, desc in detected_issues_before_fix:
+                    feedback_items.append(ReviewFeedback(slide_index=slide_index, severity="medium", category="alignment", message=desc, suggestion="Autofix could not resolve this. Manual adjustment needed."))
+        else: # Autofix is disabled, report all initially detected issues
+            for subtype, desc in detected_issues_before_fix:
+                feedback_items.append(ReviewFeedback(slide_index=slide_index, severity="medium", category="alignment", message=desc, suggestion="Enable autofix_alignment or adjust manually."))
 
-        return initial_violations # Return initial violations if no autofix or autofix disabled
+        return feedback_items
 
     def _estimate_text_lines(self, text_frame, shape_width_emu) -> int:
         """
@@ -1453,11 +1533,11 @@ class SlideAssembler:
             slide_index: Index of the slide.
             language: Language of the presentation.
         Returns:
-            A list of violation dictionaries if overflow is detected.
+            A list of ReviewFeedback objects if overflow is detected.
         """
-        violations = []
+        feedback_items: List[ReviewFeedback] = []
         if not self.validation_config.check_text_overflow or not hasattr(shape, 'text_frame') or not shape.text_frame:
-            return violations
+            return feedback_items
 
         text_frame = shape.text_frame
         # text_frame.auto_size can be:
@@ -1491,24 +1571,24 @@ class SlideAssembler:
 
         if available_text_height_emu <= 0:
             if text_frame.text.strip():
-                violations.append({
-                    'type': 'text_overflow',
-                    'description': f"Shape '{shape.name if shape.name else placeholder_idx_str}' is too small for any text, but contains text.",
-                    'slide_index': slide_index,
-                    'shape_name': shape.name if shape.name else placeholder_idx_str,
-                    'details': 'Shape height insufficient for margins.'
-                })
-            return violations
+                feedback_items.append(ReviewFeedback(
+                    slide_index=slide_index,
+                    severity="medium",
+                    category="text_overflow",
+                    message=f"Shape '{shape.name if shape.name else placeholder_idx_str}' is too small for any text, but contains text (height: {shape.height}, margins: T{text_frame.margin_top} B{text_frame.margin_bottom}).",
+                    suggestion="Increase shape height or reduce text/margins."
+                ))
+            return feedback_items
 
         estimated_lines = self._estimate_text_lines(text_frame, shape.width)
 
         if estimated_lines == 0 and not text_frame.text.strip():
-            return violations # No text, no overflow
+            return feedback_items # No text, no overflow
 
         if estimated_lines == 0 and text_frame.text.strip():
             logger.warning(f"Text overflow estimator returned 0 lines for non-empty text in shape {shape.name or placeholder_idx_str} on slide {slide_index}")
-            # Potentially add a specific violation for estimator failure if desired
-            return violations
+            # Potentially add a specific ReviewFeedback for estimator failure if desired
+            return feedback_items
 
         avg_font_size_pt = 18.0 # Default
         try:
@@ -1536,102 +1616,77 @@ class SlideAssembler:
                     # No violation is added if fixed
                 else:
                     # Add violation if autofix failed
-                    violations.append({
-                        'type': 'text_overflow',
-                        'description': f"Estimated text overflows '{shape.name if shape.name else placeholder_idx_str}' (autofix failed).",
-                        'slide_index': slide_index,
-                        'shape_name': shape.name if shape.name else placeholder_idx_str,
-                        'estimated_lines': estimated_lines,
-                        'available_height_emu': f"{available_text_height_emu:.0f}",
-                        'required_height_emu': f"{required_height_emu:.0f}",
-                        'placeholder_type_name': ph_type_name if hasattr(shape, 'placeholder_format') and shape.placeholder_format.type else "N/A"
-                    })
+                    feedback_items.append(ReviewFeedback(
+                        slide_index=slide_index,
+                        severity="medium",
+                        category="text_overflow",
+                        message=f"Estimated text ({estimated_lines} lines) overflows shape '{shape.name if shape.name else placeholder_idx_str}' (autofix failed). Available height: {available_text_height_emu:.0f} EMU, Required: {required_height_emu:.0f} EMU.",
+                        suggestion="Manually reduce text, decrease font size, or increase shape height."
+                    ))
             else:
                 # Autofix disabled, just add violation
-                violations.append({
-                    'type': 'text_overflow',
-                    'description': f"Estimated text overflows '{shape.name if shape.name else placeholder_idx_str}'.",
-                    'slide_index': slide_index,
-                    'shape_name': shape.name if shape.name else placeholder_idx_str,
-                    'estimated_lines': estimated_lines,
-                    'available_height_emu': f"{available_text_height_emu:.0f}",
-                    'required_height_emu': f"{required_height_emu:.0f}",
-                    'placeholder_type_name': ph_type_name if hasattr(shape, 'placeholder_format') and shape.placeholder_format.type else "N/A"
-                })
+                feedback_items.append(ReviewFeedback(
+                    slide_index=slide_index,
+                    severity="medium",
+                    category="text_overflow",
+                    message=f"Estimated text ({estimated_lines} lines) overflows shape '{shape.name if shape.name else placeholder_idx_str}'. Available height: {available_text_height_emu:.0f} EMU, Required: {required_height_emu:.0f} EMU.",
+                    suggestion="Enable autofix_text_overflow or manually adjust text/shape."
+                ))
 
-        return violations
+        return feedback_items
 
-    def _check_slide_placeholder_population(self, slide, slide_index: int) -> List[Dict[str, any]]:
-        violations = []
+    def _check_slide_placeholder_population(self, slide, slide_index: int) -> List[ReviewFeedback]:
+        feedback_items: List[ReviewFeedback] = []
         if not self.validation_config.check_placeholder_population:
-            return violations
+            return feedback_items
 
-        # Define which placeholder types are considered essential for population
-        # Using PP_PLACEHOLDER enum values directly
         required_placeholder_types = {
             PP_PLACEHOLDER.TITLE.value: "Title",
             PP_PLACEHOLDER.BODY.value: "Body Content"
         }
-        # PP_PLACEHOLDER.SUBTITLE (3) could also be considered, especially for title slides.
-
         has_populated_title = False
-        # For body, we check if a body placeholder *exists* and is empty.
-        # We don't want to penalize layouts that legitimately don't have a body placeholder.
         body_placeholder_exists = False
         body_placeholder_is_populated = False
 
-
         for ph in slide.placeholders:
-            # Use ph.placeholder_format.type for standard placeholder types
-            ph_type_val = ph.placeholder_format.type.value # .value to get the integer
-
+            ph_type_val = ph.placeholder_format.type.value
             is_empty = True
-            # placeholder_name = self._get_placeholder_type_name(ph_type_val) # For logging/reporting
-
             if hasattr(ph, 'text_frame') and ph.text_frame and ph.text_frame.text.strip():
                 is_empty = False
             elif ph.shape_type == MSO_SHAPE_TYPE.PICTURE:
-                # Check if it's a picture placeholder that has a picture
-                # Accessing ph.image can raise an exception if no image is present.
                 try:
-                    if ph.image: # placeholder.image exists if a picture has been inserted
-                        is_empty = False
-                except ValueError: # Handles case where there's no image
-                    pass
-            # Add checks for other content types like charts, tables if necessary
-            # e.g., if ph.has_chart or ph.has_table
+                    if ph.image: is_empty = False
+                except ValueError: pass
 
-            if ph_type_val == PP_PLACEHOLDER.TITLE.value: # Title placeholder
-                if not is_empty:
-                    has_populated_title = True
-            elif ph_type_val == PP_PLACEHOLDER.BODY.value: # Body placeholder
+            if ph_type_val == PP_PLACEHOLDER.TITLE.value:
+                if not is_empty: has_populated_title = True
+            elif ph_type_val == PP_PLACEHOLDER.BODY.value:
                 body_placeholder_exists = True
-                if not is_empty:
-                    body_placeholder_is_populated = True
+                if not is_empty: body_placeholder_is_populated = True
 
-        # After checking all placeholders, report violations
+        title_type_name = required_placeholder_types[PP_PLACEHOLDER.TITLE.value]
         if PP_PLACEHOLDER.TITLE.value in required_placeholder_types and not has_populated_title:
-            violations.append({
-                'type': 'missing_required_placeholder_content',
-                'description': f"Required '{required_placeholder_types[PP_PLACEHOLDER.TITLE.value]}' placeholder is empty or missing.",
-                'slide_index': slide_index,
-                'placeholder_type_name': required_placeholder_types[PP_PLACEHOLDER.TITLE.value],
-                'placeholder_idx': "N/A (slide-level check)"
-            })
+            feedback_items.append(ReviewFeedback(
+                slide_index=slide_index,
+                severity="high", # Missing title is generally high severity
+                category="placeholder_population",
+                message=f"Required '{title_type_name}' placeholder is empty or missing.",
+                suggestion=f"Ensure the slide has a populated '{title_type_name}' placeholder."
+            ))
 
+        body_type_name = required_placeholder_types[PP_PLACEHOLDER.BODY.value]
         if PP_PLACEHOLDER.BODY.value in required_placeholder_types and body_placeholder_exists and not body_placeholder_is_populated:
-            violations.append({
-                'type': 'empty_required_placeholder',
-                'description': f"Required '{required_placeholder_types[PP_PLACEHOLDER.BODY.value]}' placeholder is present but empty.",
-                'slide_index': slide_index,
-                'placeholder_type_name': required_placeholder_types[PP_PLACEHOLDER.BODY.value],
-                # Could try to get ph.placeholder_format.idx if needed, but might be complex here
-                'placeholder_idx': "N/A (specific body placeholder idx could be found)"
-            })
+            feedback_items.append(ReviewFeedback(
+                slide_index=slide_index,
+                severity="medium", # Empty body might be intentional, so medium
+                category="placeholder_population",
+                message=f"Required '{body_type_name}' placeholder is present but empty.",
+                suggestion=f"Populate the '{body_type_name}' placeholder or remove it if not needed for this slide layout."
+            ))
 
-        return violations
+        return feedback_items
 
-    def _validate_shape_style(self, shape, slide, slide_index: int, language: str) -> List[Dict[str, any]]:
+    def _validate_shape_style(self, shape, slide, slide_index: int, language: str) -> List[ReviewFeedback]:
         """
         Validate style for a single shape.
         
@@ -1642,57 +1697,61 @@ class SlideAssembler:
             language: Language code for the presentation
             
         Returns:
-            List of violation dictionaries
+            List of ReviewFeedback objects for the shape.
         """
-        violations = []
+        feedback_items: List[ReviewFeedback] = [] # Changed from violations to feedback_items
         
         # Alignment check (applies to all shapes)
-        alignment_violations = self._check_shape_alignment_against_margins(shape, slide, slide_index, language)
-        violations.extend(alignment_violations)
+        # _check_shape_alignment_against_margins already returns List[ReviewFeedback]
+        alignment_feedback = self._check_shape_alignment_against_margins(shape, slide, slide_index, language)
+        feedback_items.extend(alignment_feedback)
 
         # Only validate text-containing shapes for further text-related checks
         if not hasattr(shape, 'text_frame') or not shape.text_frame:
-            return violations # Return here if no text frame, but alignment violations are kept
+            return feedback_items # Return here if no text frame, but alignment feedback is kept
         
         text_frame = shape.text_frame
         
-        # Get placeholder information if available
         placeholder_type = None
-        if hasattr(shape, 'placeholder_format') and shape.placeholder_format: # Check if placeholder_format exists
-            if hasattr(shape.placeholder_format, 'type'): # Check if type attribute exists
+        if hasattr(shape, 'placeholder_format') and shape.placeholder_format:
+            if hasattr(shape.placeholder_format, 'type'):
                  placeholder_type = shape.placeholder_format.type
         
         # Validate each paragraph
+        # _validate_paragraph_style already returns List[ReviewFeedback]
         for para_index, paragraph in enumerate(text_frame.paragraphs):
-            para_violations = self._validate_paragraph_style(
-                paragraph, placeholder_type, slide_index, para_index, language # Pass language
+            para_feedback = self._validate_paragraph_style(
+                paragraph, placeholder_type, slide_index, para_index, language
             )
-            violations.extend(para_violations)
-        
-        # Check for empty placeholders
-        if not self.validation_config.allow_empty_placeholders:
-             # Ensure placeholder_type was successfully retrieved before using it
-            if not text_frame.text.strip() and placeholder_type is not None:
-                violations.append({
-                    'type': 'empty_placeholder',
-                    'description': f"Empty placeholder of type {self._get_placeholder_type_name(placeholder_type.value if hasattr(placeholder_type, 'value') else int(placeholder_type))}",
-                    'slide_index': slide_index,
-                    'placeholder_type': self._get_placeholder_type_name(placeholder_type.value if hasattr(placeholder_type, 'value') else int(placeholder_type))
-                })
+            feedback_items.extend(para_feedback)
+
+        # Check for empty placeholders (This is different from _check_slide_placeholder_population, which checks specific TITLE/BODY)
+        # This one seems to be about any placeholder having no text if allow_empty_placeholders is false.
+        if not self.validation_config.allow_empty_placeholders and placeholder_type is not None:
+            if not text_frame.text.strip():
+                ph_type_name = self._get_placeholder_type_name(placeholder_type.value if hasattr(placeholder_type, 'value') else int(placeholder_type))
+                feedback_items.append(ReviewFeedback(
+                    slide_index=slide_index,
+                    severity="low",
+                    category="placeholder_content",
+                    message=f"Placeholder '{ph_type_name}' (Name: '{shape.name if shape.name else 'Unnamed'}') is empty.",
+                    suggestion=f"Add content to placeholder '{ph_type_name}' or set allow_empty_placeholders to True if intentional."
+                ))
         
         # Check for text overflow
-        # This check is done after paragraph/run validation as it's a shape-level property
-        overflow_violations = self._check_text_frame_overflow(shape, slide_index, language) # Pass language
-        violations.extend(overflow_violations)
+        # _check_text_frame_overflow already returns List[ReviewFeedback]
+        overflow_feedback = self._check_text_frame_overflow(shape, slide_index, language)
+        feedback_items.extend(overflow_feedback)
 
-        # NEW: Image Accessibility Check (runs for MSO_SHAPE_TYPE.PICTURE)
+        # Image Accessibility Check (runs for MSO_SHAPE_TYPE.PICTURE)
+        # _check_image_accessibility already returns List[ReviewFeedback]
         if hasattr(shape, 'shape_type') and shape.shape_type == MSO_SHAPE_TYPE.PICTURE:
-            accessibility_violations = self._check_image_accessibility(shape, slide_index)
-            violations.extend(accessibility_violations)
+            accessibility_feedback = self._check_image_accessibility(shape, slide_index)
+            feedback_items.extend(accessibility_feedback)
 
-        return violations
+        return feedback_items
 
-    def _check_image_accessibility(self, shape, slide_index: int) -> List[Dict[str, any]]:
+    def _check_image_accessibility(self, shape, slide_index: int) -> List[ReviewFeedback]:
         """
         Checks if an image shape has meaningful alt text (stored in shape.name).
         Args:
@@ -1701,9 +1760,10 @@ class SlideAssembler:
         Returns:
             A list of accessibility violation dictionaries.
         """
-        violations = []
-        if not self.validation_config.check_accessibility:
-            return violations
+        feedback_items: List[ReviewFeedback] = []
+        # The field was renamed to check_alt_text_accessibility
+        if not self.validation_config.check_alt_text_accessibility:
+            return feedback_items
 
         # Generic names that suggest missing meaningful alt text.
         # This list can be expanded. Case-insensitive check.
@@ -1714,34 +1774,29 @@ class SlideAssembler:
 
         shape_name = shape.name
         is_missing_alt_text = False
-        description = "" # Initialize description
+        violation_message = ""
 
         if not shape_name or not shape_name.strip():
             is_missing_alt_text = True
-            description = f"Image shape (ID: {shape.shape_id}) is missing alt text (name property is empty)."
+            violation_message = f"Image shape (ID: {shape.shape_id}) is missing alt text (name property is empty)."
         else:
             lower_shape_name = shape_name.lower()
-            # Check if the entire name is just a generic term (e.g. "picture", "image")
             if lower_shape_name in generic_names:
                  is_missing_alt_text = True
-                 description = f"Image '{shape_name}' has alt text that is too generic ('{shape_name}') and may not be descriptive."
-            # Check for default patterns like "Picture 1", "Image 23", etc.
-            # This regex matches common default names like "Picture 1", "Image 23", "Chart 5" etc.
-            # Also matches if a generic name is followed by numbers, e.g. "Image 123"
+                 violation_message = f"Image '{shape_name}' has alt text that is too generic ('{shape_name}') and may not be descriptive."
             elif re.match(r"^(" + "|".join(generic_names) + r")(\s+\d+)?$", lower_shape_name, re.IGNORECASE):
                 is_missing_alt_text = True
-                description = f"Image '{shape_name}' has generic alt text ('{shape_name}') that follows a default pattern and may not be descriptive."
+                violation_message = f"Image '{shape_name}' has generic alt text ('{shape_name}') that follows a default pattern and may not be descriptive."
 
         if is_missing_alt_text:
-            violations.append({
-                'type': 'accessibility_violation',
-                'subtype': 'missing_alt_text',
-                'description': description,
-                'slide_index': slide_index,
-                'shape_name': shape_name if shape_name and shape_name.strip() else f"Shape ID {shape.shape_id}",
-                'details': "Ensure images have descriptive alt text set in their 'name' property (accessible via Selection Pane in PowerPoint)."
-            })
-        return violations
+            feedback_items.append(ReviewFeedback(
+                slide_index=slide_index,
+                severity="medium", # Missing/generic alt text is important
+                category="accessibility",
+                message=violation_message,
+                suggestion="Provide descriptive alt text for images using the 'name' property (accessible via Selection Pane in PowerPoint)."
+            ))
+        return feedback_items
 
     def _validate_paragraph_style(
         self, 
@@ -1902,28 +1957,29 @@ class SlideAssembler:
             para_index: Index of the paragraph
             
         Returns:
-            List of violation dictionaries
+            List of ReviewFeedback objects.
         """
-        violations = []
+        feedback_items: List[ReviewFeedback] = []
         
         if not self.validation_config.enforce_bullet_characters:
-            return violations
+            return feedback_items
         
-        # This is a simplified check - in reality, extracting bullet characters
-        # from python-pptx is complex. For now, we'll just validate that
-        # paragraphs with level > 0 have appropriate indentation
-        location = f"slide {slide_index}, paragraph {para_index}"
+        location_desc = f"paragraph {para_index + 1}"
+
+        # This is a simplified check for bullet indentation level.
+        # Validating actual bullet characters (e.g., '•' vs '-') is complex with current python-pptx capabilities
+        # and would typically require deeper XML inspection or more advanced template parsing.
         
         if paragraph.level != expected_bullet.indent_level:
-            violations.append({
-                'type': 'bullet_level',
-                'description': f"Bullet indentation level mismatch at {location}",
-                'expected': expected_bullet.indent_level,
-                'actual': paragraph.level,
-                'slide_index': slide_index
-            })
+            feedback_items.append(ReviewFeedback(
+                slide_index=slide_index,
+                severity="low",
+                category="style_validation_bullet", # Category for bullet style issues
+                message=f"Bullet indentation level mismatch for {location_desc}. Expected level: {expected_bullet.indent_level}, Actual: {paragraph.level}.",
+                suggestion=f"Adjust bullet level for {location_desc} to {expected_bullet.indent_level} to match template style."
+            ))
         
-        return violations
+        return feedback_items
 
     def _validate_color(
         self, 
@@ -1942,31 +1998,36 @@ class SlideAssembler:
             slide_index: Index of the slide
             
         Returns:
-            List of violation dictionaries
+            List of ReviewFeedback objects
         """
-        violations = []
+        feedback_items: List[ReviewFeedback] = []
         
         try:
-            # Get actual color as hex
             actual_hex = self._color_to_hex(actual_color)
             if not actual_hex:
-                return violations
+                # Cannot determine actual color, cannot compare. Could log or return specific feedback.
+                return feedback_items
             
-            # Compare colors with tolerance
             if not self._colors_match(actual_hex, expected_color_hex):
-                violations.append({
-                    'type': 'color',
-                    'description': f"Color mismatch at {location}",
-                    'expected': expected_color_hex,
-                    'actual': actual_hex,
-                    'tolerance': self.validation_config.color_tolerance,
-                    'slide_index': slide_index
-                })
+                feedback_items.append(ReviewFeedback(
+                    slide_index=slide_index,
+                    severity="low", # Color mismatches are often minor unless severe contrast issues
+                    category="style_validation_color",
+                    message=f"Color mismatch at {location}. Expected: {expected_color_hex}, Actual: {actual_hex}.",
+                    suggestion=f"Ensure color at {location} matches the template's expected color {expected_color_hex} (tolerance: {self.validation_config.color_tolerance})."
+                ))
         
         except Exception as e:
             logger.debug(f"Failed to validate color at {location}: {e}")
-        
-        return violations
+            feedback_items.append(ReviewFeedback(
+                slide_index=slide_index,
+                severity="low",
+                category="style_validation_error",
+                message=f"Error validating color at {location}: {e}",
+                suggestion="Check color parsing or comparison logic."
+            ))
+
+        return feedback_items
 
     def _color_to_hex(self, color) -> Optional[str]:
         """
