@@ -106,7 +106,7 @@ class ProofreadingResult(BaseModel):
                     }
                 ],
                 "processing_time_seconds": 5.2,
-                "model_used": "gpt-4"
+                "model_used": "gpt-4.1"
             }
         }
 
@@ -117,7 +117,7 @@ class VisualProofreader:
     def __init__(
         self,
         client: Union[OpenAI, AsyncOpenAI],
-        model: str = "gpt-4",
+        model: str = "gpt-4.1",
         temperature: float = 0.1,
         max_retries: int = 3
     ):
@@ -471,6 +471,7 @@ Be thorough but focus on genuine issues that would be noticed by a professional 
             "gpt-4-turbo",
             "gpt-4o",
             "gpt-4o-mini",
+            "gpt-4.1",
             "gpt-3.5-turbo",
             "gpt-3.5-turbo-1106",
             "gpt-3.5-turbo-0125",

@@ -27,7 +27,7 @@ class TestEngagementPromptTuner:
         """Create an EngagementPromptTuner instance with mocked client."""
         return EngagementPromptTuner(
             client=mock_openai_client,
-            model="gpt-4",
+            model="gpt-4.1",
             temperature=0.4
         )
     

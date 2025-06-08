@@ -27,7 +27,7 @@ class TestFlowIntelligence:
         """Create a FlowIntelligence instance with mocked client."""
         return FlowIntelligence(
             client=mock_openai_client,
-            model="gpt-4",
+            model="gpt-4.1",
             temperature=0.3
         )
     

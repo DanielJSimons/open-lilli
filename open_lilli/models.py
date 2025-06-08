@@ -503,7 +503,7 @@ class StyleValidationConfig(BaseModel):
         description="Optional list of specific `DesignIssueType` areas (e.g., 'CAPITALIZATION', 'ALIGNMENT') for the VisualProofreader to concentrate on. If None, the proofreader typically uses its own default set of focus areas."
     )
     visual_proofreader_model: str = Field(
-        default="gpt-4",
+        default="gpt-4.1",
         description="Specifies the LLM model to be used by the VisualProofreader (e.g., 'gpt-4', 'gpt-4-turbo-preview'). Model choice can impact quality, speed, and cost."
     )
     visual_proofreader_temperature: float = Field(
