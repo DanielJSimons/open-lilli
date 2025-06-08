@@ -207,7 +207,8 @@ class SlideAssembler:
         slide_idx: int,
         slide_plan: SlidePlan,
         slide_visuals: Dict[str, str],
-        language: str # Add language parameter
+        language: str, # Add language parameter
+        shape_whitelist: Optional[List[str]] = None
     ) -> None:
         """
         Replace a slide at a specific index with new content.
@@ -218,6 +219,7 @@ class SlideAssembler:
             slide_plan: New slide plan with content
             slide_visuals: Visual assets for the slide
             language: Language code for the presentation
+            shape_whitelist: Optional list of shape names to preserve during clearing
         """
         # Get the existing slide
         existing_slide = prs.slides[slide_idx]
@@ -231,7 +233,7 @@ class SlideAssembler:
             layout = prs.slide_layouts[layout_index]
         
         # Clear existing content while preserving slide structure
-        self._clear_slide_content(existing_slide)
+        self._clear_slide_content(existing_slide, shape_whitelist=shape_whitelist)
         
         # Apply new layout if different
         if layout != existing_slide.slide_layout:
@@ -277,12 +279,13 @@ class SlideAssembler:
         if slide_plan.speaker_notes:
             self._add_speaker_notes(existing_slide, slide_plan.speaker_notes)
 
-    def _clear_slide_content(self, slide) -> None:
+    def _clear_slide_content(self, slide, shape_whitelist: Optional[List[str]] = None) -> None:
         """
         Clear content from a slide while preserving structure.
         
         Args:
             slide: PowerPoint slide object to clear
+            shape_whitelist: Optional list of shape names to preserve
         """
         try:
             # Clear text content from placeholders
@@ -297,6 +300,10 @@ class SlideAssembler:
             for shape in slide.shapes:
                 # Only remove shapes that are not placeholders
                 if not hasattr(shape, 'placeholder_format'):
+                    # If a whitelist is provided, don't remove shapes in the whitelist
+                    if shape_whitelist and shape.name in shape_whitelist:
+                        logger.debug(f"Skipping removal of whitelisted shape: {shape.name}")
+                        continue
                     shapes_to_remove.append(shape)
             
             # Remove collected shapes
@@ -381,6 +388,10 @@ class SlideAssembler:
             if hasattr(slide_plan, '__dict__') and 'font_adjustment' in slide_plan.__dict__:
                 slide_plan.__dict__['font_adjustment'] = None
 
+        # Perform post-processing: remove unwanted shapes and hide empty placeholders
+        # Passing None for shape_whitelist as this is a new slide.
+        self._postprocess_slide(slide, shape_whitelist=None)
+
         # Apply font adjustments if needed (will be skipped if cleared above)
         self._apply_font_adjustments(slide, slide_plan)
         
@@ -388,10 +399,49 @@ class SlideAssembler:
         if slide_plan.speaker_notes:
             self._add_speaker_notes(slide, slide_plan.speaker_notes)
         
-        # T-93: Remove/hide any empty placeholders to avoid style warnings
-        hidden_count = self._remove_empty_placeholders_from_slide(slide)
-        if hidden_count > 0:
-            logger.debug(f"Hidden {hidden_count} empty placeholders on slide {slide_plan.index}")
+        # Note: _remove_empty_placeholders_from_slide is now called within _postprocess_slide
+        # So the explicit call here is removed.
+
+    def _postprocess_slide(self, slide, shape_whitelist: Optional[List[str]] = None) -> None:
+        """
+        Perform post-processing on a slide after content has been added.
+        This includes removing unwanted non-placeholder shapes and hiding empty placeholders.
+
+        Args:
+            slide: PowerPoint slide object to post-process.
+            shape_whitelist: Optional list of shape names to preserve from removal.
+        """
+        logger.debug(f"Starting post-processing for slide (ID: {slide.slide_id if hasattr(slide, 'slide_id') else 'N/A'})...")
+
+        # 1. Remove non-placeholder shapes (like added images/charts not in whitelist)
+        # This logic is adapted from _clear_slide_content but only for non-placeholders
+        shapes_to_remove = []
+        for shape in slide.shapes:
+            if not hasattr(shape, 'placeholder_format'): # It's a non-placeholder shape
+                if shape_whitelist and shape.name in shape_whitelist:
+                    logger.debug(f"Post-process: Skipping removal of whitelisted non-placeholder shape: {shape.name}")
+                    continue
+                shapes_to_remove.append(shape)
+                logger.debug(f"Post-process: Queuing non-placeholder shape for removal: {shape.name or 'Unnamed shape'}")
+
+        removed_count = 0
+        for shape in shapes_to_remove:
+            try:
+                slide.shapes._spTree.remove(shape._element)
+                removed_count +=1
+            except Exception as e:
+                logger.debug(f"Post-process: Could not remove shape {shape.name or 'Unnamed shape'}: {e}")
+
+        if removed_count > 0:
+            logger.debug(f"Post-process: Removed {removed_count} non-placeholder shapes.")
+
+        # 2. Remove/hide any empty placeholders to avoid style warnings
+        hidden_placeholder_count = self._remove_empty_placeholders_from_slide(slide)
+        if hidden_placeholder_count > 0:
+            logger.debug(f"Post-process: Hid {hidden_placeholder_count} empty placeholders on slide.")
+
+        logger.debug(f"Finished post-processing for slide (ID: {slide.slide_id if hasattr(slide, 'slide_id') else 'N/A'}).")
+
 
     def _add_title(self, slide, title: str, language: str) -> None: # Add language
         """Add title to slide."""
@@ -2314,19 +2364,54 @@ class SlideAssembler:
         
         try:
             for placeholder in slide.placeholders:
-                # Check if placeholder is empty
                 is_empty = True
+                placeholder_type_val = placeholder.placeholder_format.type.value if hasattr(placeholder.placeholder_format.type, 'value') else int(placeholder.placeholder_format.type)
+
+                # Check for picture placeholders (PICTURE (18) or OBJECT (10))
+                if placeholder.shape_type == MSO_SHAPE_TYPE.PLACEHOLDER and \
+                   (placeholder_type_val == PP_PLACEHOLDER.PICTURE.value or placeholder_type_val == PP_PLACEHOLDER.OBJECT.value):
+                    try:
+                        if placeholder.image:  # Accessing .image throws ValueError if no image
+                            is_empty = False
+                            logger.debug(f"Placeholder {placeholder.name} (type: {self._get_placeholder_type_name(placeholder_type_val)}) contains an image.")
+                    except ValueError:
+                        # No image, it's potentially empty. For OBJECT, also check text.
+                        if placeholder_type_val == PP_PLACEHOLDER.PICTURE.value:
+                            is_empty = True
+                            logger.debug(f"Picture Placeholder {placeholder.name} is empty (no image).")
+                        elif placeholder_type_val == PP_PLACEHOLDER.OBJECT.value:
+                            # For OBJECT placeholders, if no image, check for text.
+                            if hasattr(placeholder, 'text_frame') and placeholder.text_frame and placeholder.text_frame.text.strip():
+                                is_empty = False
+                                logger.debug(f"Object Placeholder {placeholder.name} has text, not empty.")
+                            # Could add checks for .has_chart or .has_table if needed in future
+                            # else: is_empty remains true if no image and no text
+                            else:
+                                logger.debug(f"Object Placeholder {placeholder.name} is empty (no image/text).")
                 
-                if hasattr(placeholder, 'text_frame') and placeholder.text_frame:
-                    if placeholder.text_frame.text.strip():
-                        is_empty = False
-                elif hasattr(placeholder, 'text') and placeholder.text:
-                    if placeholder.text.strip():
-                        is_empty = False
+                # Check for text in other placeholder types or if it's an OBJECT placeholder not emptied by image check
+                # This 'elif' ensures text check runs if it's not a picture-type placeholder,
+                # or if it's an OBJECT type that was found to not contain an image (is_empty would still be true).
+                elif hasattr(placeholder, 'text_frame') and placeholder.text_frame and placeholder.text_frame.text.strip():
+                    is_empty = False
+                    logger.debug(f"Text Placeholder {placeholder.name} (type: {self._get_placeholder_type_name(placeholder_type_val)}) has text.")
+
+                # Fallback for very old placeholder types that might only have .text (less common)
+                elif not hasattr(placeholder, 'text_frame') and hasattr(placeholder, 'text') and placeholder.text and placeholder.text.strip():
+                    is_empty = False
+                    logger.debug(f"Legacy Text Placeholder {placeholder.name} (type: {self._get_placeholder_type_name(placeholder_type_val)}) has text.")
                 
-                # Hide empty placeholders (except title which should always be visible)
-                if is_empty and placeholder.placeholder_format.type != 1:  # Not TITLE
-                    placeholder_type_name = self._get_placeholder_type_name(placeholder.placeholder_format.type)
+                else:
+                    # If none of the above conditions met (e.g. not pic/obj, no text_frame, or text_frame is empty)
+                    # is_empty remains true by default.
+                    if not (placeholder.shape_type == MSO_SHAPE_TYPE.PLACEHOLDER and \
+                            (placeholder_type_val == PP_PLACEHOLDER.PICTURE.value or placeholder_type_val == PP_PLACEHOLDER.OBJECT.value)):
+                         logger.debug(f"Placeholder {placeholder.name} (type: {self._get_placeholder_type_name(placeholder_type_val)}) is considered empty (no text).")
+
+
+                # Hide empty placeholders (except title which should always be visible - type 1)
+                if is_empty and placeholder_type_val != PP_PLACEHOLDER.TITLE.value:
+                    placeholder_type_name = self._get_placeholder_type_name(placeholder_type_val)
                     self._hide_empty_placeholder(placeholder, placeholder_type_name)
                     hidden_count += 1
         
