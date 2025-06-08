@@ -43,6 +43,34 @@ class BulletItem(BaseModel):
         }
 
 
+class TextOverflowConfig(BaseModel):
+    """Configuration for handling text overflow in placeholders."""
+
+    enable_bullet_splitting: bool = Field(
+        default=True,
+        description="Enable splitting of bullet lists across multiple slides if they overflow."
+    )
+    max_lines_per_placeholder: int = Field(
+        default=15,
+        description="Maximum number of lines allowed in a single placeholder before overflow handling (e.g., splitting) is triggered. This can be adjusted based on typical template font sizes and placeholder dimensions."
+    )
+    split_slide_title_suffix: str = Field(
+        default="(Cont.)",
+        description="Suffix to append to the title of a slide that has been created as a result of splitting a previous slide's content due to overflow."
+    )
+
+    class Config:
+        """Pydantic configuration."""
+
+        json_schema_extra = {
+            "example": {
+                "enable_bullet_splitting": True,
+                "max_lines_per_placeholder": 15,
+                "split_slide_title_suffix": "(Cont.)"
+            }
+        }
+
+
 class QualityGates(BaseModel):
     """Configuration for quality gate thresholds in presentation review."""
 
@@ -492,6 +520,10 @@ class StyleValidationConfig(BaseModel):
         default_factory=QualityGates,
         description="Configuration for quality gates, including slide margins which are crucial for alignment checks."
     )
+    text_overflow_config: Optional[TextOverflowConfig] = Field(
+        default=None,
+        description="Configuration for text overflow handling, such as splitting bullets or slides."
+    )
 
     # Visual Proofreader specific settings
     enable_visual_proofreader: bool = Field(
@@ -545,6 +577,11 @@ class StyleValidationConfig(BaseModel):
                     "slide_margin_left_inches": 0.5,
                     "slide_margin_right_inches": 0.5,
                     "enable_alignment_check": True
+                },
+                "text_overflow_config": {
+                    "enable_bullet_splitting": True,
+                    "max_lines_per_placeholder": 15,
+                    "split_slide_title_suffix": "(Cont.)"
                 },
                 "enable_visual_proofreader": True,
                 "visual_proofreader_focus_areas": ["capitalization", "consistency"],

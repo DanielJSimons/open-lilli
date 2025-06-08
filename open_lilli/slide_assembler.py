@@ -14,7 +14,7 @@ from openai import OpenAI # For VisualProofreader initialization
 
 from .models import (
     Outline, SlidePlan, StyleValidationConfig, FontInfo, BulletInfo, FontAdjustment,
-    NativeChartData, BulletItem, ReviewFeedback, DesignIssueType
+    NativeChartData, BulletItem, ReviewFeedback, DesignIssueType, TextOverflowConfig
 )
 from .template_parser import TemplateParser
 from .exceptions import StyleError, ValidationConfigError
@@ -44,6 +44,17 @@ class SlideAssembler:
         self.max_bullet_length = 120
         self.validation_config = validation_config or StyleValidationConfig()
         
+        # Initialize text overflow configuration
+        if self.validation_config.text_overflow_config is None:
+            self.overflow_config = TextOverflowConfig()
+            logger.info("TextOverflowConfig not provided, initialized with default settings.")
+        else:
+            self.overflow_config = self.validation_config.text_overflow_config
+            logger.info("TextOverflowConfig loaded from validation_config.")
+
+        logger.info(f"Text overflow - Enable bullet splitting: {self.overflow_config.enable_bullet_splitting}")
+        logger.info(f"Text overflow - Max lines per placeholder: {self.overflow_config.max_lines_per_placeholder}")
+
         # Conditionally initialize the VisualProofreader based on configuration.
         # This allows for LLM-based checks if enabled.
         self.visual_proofreader = None
@@ -106,15 +117,44 @@ class SlideAssembler:
             prs.part.drop_rel(r_id)
             del prs.slides._sldIdLst[i]
         
-        # Add slides
-        for slide_plan in slides:
+        # Create a mutable list of slide plans to process
+        slide_plans_to_process: List[SlidePlan] = list(slides) # Operate on a copy
+
+        current_idx = 0
+        while current_idx < len(slide_plans_to_process):
+            current_slide_plan = slide_plans_to_process[current_idx]
+
+            logger.info(f"Processing slide plan for original index {current_slide_plan.index}, current title: '{current_slide_plan.title}' (List length: {len(slide_plans_to_process)})")
+
             try:
-                self._add_slide(prs, slide_plan, visuals.get(slide_plan.index, {}), language) # Pass language
-                logger.debug(f"Added slide {slide_plan.index}: {slide_plan.title}")
+                # _add_slide now returns a list of new SlidePlan objects for *additional* slides.
+                # The current_slide_plan is processed and added to prs within _add_slide.
+                additional_slide_plans = self._add_slide(
+                    prs,
+                    current_slide_plan,
+                    visuals.get(current_slide_plan.index, {}), # Use original index for visuals
+                    language
+                )
+
+                if additional_slide_plans:
+                    logger.info(f"Original slide {current_slide_plan.index} ('{current_slide_plan.title}') generated {len(additional_slide_plans)} additional slide(s) due to content splitting.")
+                    for i, new_plan in enumerate(additional_slide_plans):
+                        # Insert new plans into the processing list right after the current one.
+                        # Their 'index' field is initially -1 or based on the parent.
+                        # The actual slide index in the final presentation is determined by its order in prs.slides.
+                        slide_plans_to_process.insert(current_idx + 1 + i, new_plan)
+                        logger.debug(f"Inserted new slide plan '{new_plan.title}' to be processed next.")
+                    logger.debug(f"Slide plans to process now has {len(slide_plans_to_process)} items.")
+
             except Exception as e:
-                logger.error(f"Failed to add slide {slide_plan.index}: {e}")
-                # Add a basic slide as fallback
-                self._add_fallback_slide(prs, slide_plan)
+                logger.error(f"Failed to process or add slide from plan (original index {current_slide_plan.index}, title '{current_slide_plan.title}'): {e}")
+                # Optionally, add a fallback slide to prs if _add_slide failed catastrophically before creating a pptx slide object.
+                # However, _add_slide is expected to handle its own errors and add a basic slide.
+                # If _add_slide itself throws, it means the pptx slide object wasn't even created.
+                # Consider if a global fallback is needed here, or if _add_slide's internal fallback is sufficient.
+                # For now, we assume _add_slide handles its own errors including adding a fallback.
+
+            current_idx += 1
         
         # Apply presentation metadata
         self._apply_metadata(prs, outline)
@@ -248,11 +288,18 @@ class SlideAssembler:
         if slide_plan.slide_type == "title":
             self._add_title_slide_content(existing_slide, slide_plan, language) # Pass language
         elif slide_plan.bullet_hierarchy is not None or slide_plan.bullets:
-            # T-100: Use hierarchical bullet content if available, otherwise fall back to legacy
+            additional_plans_from_bullets: List[SlidePlan] = []
             if slide_plan.bullet_hierarchy is not None:
-                self._add_hierarchical_bullet_content(existing_slide, slide_plan, language)
-            else:
-                self._add_bullet_content(existing_slide, slide_plan.bullets, language) # Pass language
+                additional_plans_from_bullets = self._add_hierarchical_bullet_content(existing_slide, slide_plan, language)
+            elif slide_plan.bullets: # Ensure bullets exist before calling
+                additional_plans_from_bullets = self._add_bullet_content(existing_slide, slide_plan, language)
+
+            if additional_plans_from_bullets:
+                logger.warning(
+                    f"Text overflow in slide {slide_idx} during patch operation would result in new slides. "
+                    "This is not fully supported in patch mode. Extra content will be on the new slide plan "
+                    "but not inserted into this patched presentation."
+                )
         
         # Add visuals
         if "native_chart" in slide_visuals and slide_plan.chart_data:
@@ -330,8 +377,12 @@ class SlideAssembler:
         slide_plan: SlidePlan,
         slide_visuals: Dict[str, str],
         language: str # Add language parameter
-    ) -> None:
-        """Add a single slide to the presentation."""
+    ) -> List[SlidePlan]:
+        """
+        Adds a single slide to the presentation based on slide_plan.
+        Returns a list of any additional SlidePlan objects created due to splitting.
+        """
+        all_newly_created_slide_plans: List[SlidePlan] = []
         
         # Get the appropriate layout
         layout_index = slide_plan.layout_id or 0
@@ -354,11 +405,16 @@ class SlideAssembler:
             # Assuming _add_title_slide_content also needs language for RTL subtitle
             self._add_title_slide_content(slide, slide_plan, language) # Pass language
         elif slide_plan.bullet_hierarchy is not None or slide_plan.bullets:
+            new_plans: List[SlidePlan] = []
             # T-100: Use hierarchical bullet content if available, otherwise fall back to legacy
             if slide_plan.bullet_hierarchy is not None:
-                self._add_hierarchical_bullet_content(slide, slide_plan, language)
-            else:
-                self._add_bullet_content(slide, slide_plan.bullets, language) # Pass language
+                new_plans = self._add_hierarchical_bullet_content(slide, slide_plan, language)
+            elif slide_plan.bullets: # Ensure bullets exist before calling _add_bullet_content
+                # Pass the slide_plan object to _add_bullet_content
+                new_plans = self._add_bullet_content(slide, slide_plan, language)
+
+            if new_plans:
+                all_newly_created_slide_plans.extend(new_plans)
         
         # Add visuals
         if "native_chart" in slide_visuals and slide_plan.chart_data:
@@ -399,8 +455,7 @@ class SlideAssembler:
         if slide_plan.speaker_notes:
             self._add_speaker_notes(slide, slide_plan.speaker_notes)
         
-        # Note: _remove_empty_placeholders_from_slide is now called within _postprocess_slide
-        # So the explicit call here is removed.
+        return all_newly_created_slide_plans
 
     def _postprocess_slide(self, slide, shape_whitelist: Optional[List[str]] = None) -> None:
         """
@@ -515,82 +570,278 @@ class SlideAssembler:
         except Exception as e:
             logger.error(f"Failed to add title slide content: {e}")
 
-    def _add_bullet_content(self, slide, bullets: List[str], language: str) -> None: # Add language
-        """Add bullet points to slide."""
-        try:
-            # T-94: Find all BODY placeholders for two-column distribution
-            body_placeholders = []
-            
+    def _add_bullet_content(self, slide, slide_plan: SlidePlan, language: str) -> List[SlidePlan]: # Add language
+        """
+        Add bullet points to slide, potentially splitting content if it overflows.
+        This method handles legacy flat list of bullets.
+        """
+        newly_created_slides: List[SlidePlan] = []
+        bullets: List[str] = slide_plan.bullets # Get bullets from slide_plan
+
+        # Find BODY placeholders
+        body_placeholders = []
+        for placeholder in slide.placeholders:
+            ph_type = placeholder.placeholder_format.type
+            if ph_type in (PP_PLACEHOLDER.BODY, PP_PLACEHOLDER.OBJECT):
+                body_placeholders.append(placeholder)
+
+        if not body_placeholders:
+            logger.warning("No BODY/OBJECT placeholder found, looking for any text placeholder")
             for placeholder in slide.placeholders:
-                ph_type = placeholder.placeholder_format.type
-                if ph_type in (PP_PLACEHOLDER.BODY, PP_PLACEHOLDER.OBJECT):  # BODY or OBJECT
+                if hasattr(placeholder, 'text_frame'):
                     body_placeholders.append(placeholder)
-            
-            if not body_placeholders:
-                logger.warning("No content placeholder found, looking for any text placeholder")
-                # Fallback: look for any placeholder we can use
-                for placeholder in slide.placeholders:
-                    if hasattr(placeholder, 'text_frame'):
-                        body_placeholders.append(placeholder)
-                        break
-            
-            if not body_placeholders:
-                logger.warning("No suitable placeholder found for bullet content")
-                return
-            
-            # T-94: Two-column bullet distribution when ≥2 BODY placeholders
+                    break
+
+        if not body_placeholders:
+            logger.warning(f"Slide {slide_plan.index}: No suitable placeholder found for bullet content.")
+            return []
+
+        # Original logic path for no splitting or if splitting is disabled
+        def _apply_original_bullet_logic():
             if len(body_placeholders) >= 2 and len(bullets) > 1:
+                logger.debug(f"Slide {slide_plan.index}: Applying two-column distribution for {len(bullets)} bullets.")
                 self._distribute_bullets_across_columns(body_placeholders, bullets, language)
             else:
-                # Standard single-column bullet distribution
+                logger.debug(f"Slide {slide_plan.index}: Applying single-column distribution for {len(bullets)} bullets.")
                 self._add_bullets_to_placeholder(body_placeholders[0], bullets, language)
-                
-        except Exception as e:
-            logger.error(f"Failed to add bullet content: {e}")
+            return []
 
-    def _add_hierarchical_bullet_content(self, slide, slide_plan: SlidePlan, language: str) -> None:
-        """
-        Add hierarchical bullet content to slide (T-100).
+        if not self.overflow_config.enable_bullet_splitting:
+            logger.info(f"Slide {slide_plan.index}: Bullet splitting is disabled. Applying original bullet logic.")
+            return _apply_original_bullet_logic()
+
+        if not bullets:
+            return []
+
+        bullet_items = [BulletItem(text=b, level=0) for b in bullets]
+        primary_placeholder = body_placeholders[0]
         
-        Args:
-            slide: PowerPoint slide object
-            slide_plan: SlidePlan with hierarchical bullet structure
-            language: Language code for text formatting
+        placeholder_width_inches = (primary_placeholder.width / 914400.0) if primary_placeholder.width else 6.0
+        base_font_size_pt = 18.0
+        max_lines_allowed = self.overflow_config.max_lines_per_placeholder
+
+        estimated_total_lines = self._estimate_lines_for_bullets(
+            bullet_items, placeholder_width_inches, base_font_size_pt
+        )
+        logger.info(f"Slide {slide_plan.index} (_add_bullet_content): Estimated total lines for {len(bullet_items)} bullets: {estimated_total_lines}. Max allowed: {max_lines_allowed}.")
+
+        # If content fits OR if there are multiple body placeholders (implying a two-column layout where native distribution is preferred unless single column overflows)
+        # The condition `len(body_placeholders) >= 2` ensures that if it's a two-column layout,
+        # we prefer the original distribution logic unless the content is so large it would overflow even one column.
+        if estimated_total_lines <= max_lines_allowed or len(body_placeholders) >= 2:
+            if len(body_placeholders) >= 2:
+                 logger.debug(f"Slide {slide_plan.index}: Content fits single column estimate or is two-column layout. Applying original distribution logic.")
+            else:
+                 logger.debug(f"Slide {slide_plan.index}: Content fits single column estimate. Adding all bullets.")
+            return _apply_original_bullet_logic()
+        else:
+            # Splitting is needed for a single column equivalent
+            logger.info(f"Slide {slide_plan.index}: Splitting needed for {len(bullets)} legacy bullets (single column focus).")
+            current_slide_bullets_text: List[str] = []
+            lines_on_current_slide = 0
+            split_idx = 0
+
+            for i, bullet_item in enumerate(bullet_items):
+                lines_for_this_bullet = self._estimate_lines_for_bullets(
+                    [bullet_item], placeholder_width_inches, base_font_size_pt
+                )
+                if not current_slide_bullets_text or (lines_on_current_slide + lines_for_this_bullet <= max_lines_allowed):
+                    current_slide_bullets_text.append(bullets[i]) # Use original string bullet
+                    lines_on_current_slide += lines_for_this_bullet
+                    split_idx = i + 1
+                else:
+                    break
+            
+            if current_slide_bullets_text:
+                self._add_bullets_to_placeholder(primary_placeholder, current_slide_bullets_text, language)
+                logger.info(f"Slide {slide_plan.index}: Added {len(current_slide_bullets_text)} bullets ({lines_on_current_slide} lines) to current slide's primary placeholder.")
+            
+            remaining_bullets_text = bullets[split_idx:]
+            if remaining_bullets_text:
+                logger.info(f"Slide {slide_plan.index}: {len(remaining_bullets_text)} legacy bullets remaining for new slide(s).")
+                # Try to get current slide's layout ID for the new slide
+                try:
+                    current_layout_id = slide.slide_layout.slide_master.slide_layouts.index(slide.slide_layout)
+                except ValueError: # If layout not found in master's list (should not happen)
+                    logger.warning(f"Could not determine layout ID for slide {slide_plan.index}, defaulting to original slide_plan.layout_id or 0.")
+                    current_layout_id = slide_plan.layout_id or 0
+
+
+                new_slide_plan_data = {
+                    "index": -1, # Placeholder
+                    "title": f"{slide_plan.title} {self.overflow_config.split_slide_title_suffix}",
+                    "layout_id": current_layout_id,
+                    "slide_type": slide_plan.slide_type, # Keep original type or use "content"
+                    "bullets": remaining_bullets_text,   # Legacy string list for the new slide
+                    "bullet_hierarchy": None,            # Explicitly None
+                    "image_query": slide_plan.image_query,
+                    "chart_data": slide_plan.chart_data,
+                    "speaker_notes": slide_plan.speaker_notes or "Content continued from previous slide.",
+                    "summarized_by_llm": slide_plan.summarized_by_llm,
+                    "font_adjustment": None,
+                    "image_alt_text": slide_plan.image_alt_text,
+                    "needs_splitting": False
+                }
+                try:
+                    new_slide = SlidePlan(**new_slide_plan_data)
+                    newly_created_slides.append(new_slide)
+                    logger.info(f"Created new SlidePlan for continued legacy bullet content from slide {slide_plan.index} with title '{new_slide.title}'.")
+                except Exception as e:
+                    logger.error(f"Error creating new SlidePlan (legacy bullets) during split: {e}. Data: {new_slide_plan_data}")
+
+            return newly_created_slides
+
+    def _add_hierarchical_bullet_content(self, slide, slide_plan: SlidePlan, language: str) -> List[SlidePlan]:
         """
-        try:
-            # Get effective bullets (hierarchical or legacy)
-            bullet_items = slide_plan.get_effective_bullets()
+        Add hierarchical bullet content to slide (T-100), potentially splitting it
+        across multiple slides if it overflows.
+
+        Args:
+            slide: PowerPoint slide object for the current slide.
+            slide_plan: SlidePlan for the current slide.
+            language: Language code for text formatting.
             
-            if not bullet_items:
-                return
-            
-            # Find BODY placeholders
-            body_placeholders = []
-            
-            for placeholder in slide.placeholders:
-                ph_type = placeholder.placeholder_format.type
-                if ph_type in (PP_PLACEHOLDER.BODY, PP_PLACEHOLDER.OBJECT):  # BODY or OBJECT
-                    body_placeholders.append(placeholder)
-            
-            if not body_placeholders:
-                logger.warning("No content placeholder found, looking for any text placeholder")
-                # Fallback: look for any placeholder we can use
-                for placeholder in slide.placeholders:
-                    if hasattr(placeholder, 'text_frame'):
-                        body_placeholders.append(placeholder)
+        Returns:
+            List[SlidePlan]: A list of newly created SlidePlan objects if splitting occurred.
+                             Returns an empty list if no splitting was necessary.
+        """
+        newly_created_slides: List[SlidePlan] = []
+
+        if not self.overflow_config.enable_bullet_splitting:
+            logger.info("Bullet splitting is disabled. Adding all bullets to current slide.")
+            # Find and add to placeholder without splitting (original logic path)
+            bullet_items_no_split = slide_plan.get_effective_bullets()
+            if not bullet_items_no_split:
+                return []
+
+            body_placeholders_no_split = []
+            for placeholder_no_split in slide.placeholders:
+                ph_type_no_split = placeholder_no_split.placeholder_format.type
+                if ph_type_no_split in (PP_PLACEHOLDER.BODY, PP_PLACEHOLDER.OBJECT):
+                    body_placeholders_no_split.append(placeholder_no_split)
+
+            if not body_placeholders_no_split: # Fallback if no BODY/OBJECT
+                for placeholder_no_split in slide.placeholders:
+                    if hasattr(placeholder_no_split, 'text_frame'):
+                        body_placeholders_no_split.append(placeholder_no_split)
                         break
             
-            if not body_placeholders:
-                logger.warning("No suitable placeholder found for hierarchical bullet content")
-                return
+            if body_placeholders_no_split:
+                self._add_hierarchical_bullets_to_placeholder(body_placeholders_no_split[0], bullet_items_no_split, language)
+            else:
+                logger.warning(f"Slide {slide_plan.index}: No suitable placeholder found for bullets when splitting is disabled.")
+            return []
+
+        bullet_items = slide_plan.get_effective_bullets()
+        if not bullet_items:
+            return []
+
+        # Find the primary body placeholder
+        placeholder_to_use = None
+        for ph_candidate in slide.placeholders:
+            ph_type_candidate = ph_candidate.placeholder_format.type
+            if ph_type_candidate in (PP_PLACEHOLDER.BODY, PP_PLACEHOLDER.OBJECT):
+                placeholder_to_use = ph_candidate
+                break
+        if not placeholder_to_use: # Fallback
+            for ph_candidate in slide.placeholders:
+                if hasattr(ph_candidate, 'text_frame'):
+                    placeholder_to_use = ph_candidate
+                    break
+
+        if not placeholder_to_use:
+            logger.warning(f"Slide {slide_plan.index}: No suitable body placeholder found for hierarchical bullets. Cannot apply splitting logic.")
+            # Add all bullets to the first available text frame as a last resort if no splitting can be determined
+            if slide.shapes.placeholders: # Check if there are any placeholders
+                 first_ph_with_tf = None
+                 for ph_any in slide.shapes.placeholders:
+                     if hasattr(ph_any, 'text_frame'):
+                         first_ph_with_tf = ph_any
+                         break
+                 if first_ph_with_tf:
+                    self._add_hierarchical_bullets_to_placeholder(first_ph_with_tf, bullet_items, language)
+                 else: # Truly no text frame anywhere
+                    logger.error(f"Slide {slide_plan.index}: No placeholder with a text_frame found. Bullets cannot be added.")
+            return []
+
+        # Placeholder and Font Information (rudimentary for now)
+        # 1 inch = 914400 EMUs. python-pptx shape dimensions are in EMUs.
+        placeholder_width_inches = (placeholder_to_use.width / 914400.0) if placeholder_to_use.width else 6.0 # Default if width is 0 or None
+        # placeholder_height_inches = (placeholder_to_use.height / 914400.0) if placeholder_to_use.height else 4.0 # Default
+        base_font_size_pt = 18.0 # Default base font size
+
+        # Max lines based on configuration
+        max_lines_allowed = self.overflow_config.max_lines_per_placeholder
+        logger.debug(f"Slide {slide_plan.index}: Max lines allowed per placeholder (config): {max_lines_allowed}")
+
+        estimated_total_lines = self._estimate_lines_for_bullets(
+            bullet_items, placeholder_width_inches, base_font_size_pt
+        )
+        logger.info(f"Slide {slide_plan.index}: Estimated total lines for {len(bullet_items)} bullets: {estimated_total_lines}. Max allowed: {max_lines_allowed}.")
+
+        if estimated_total_lines <= max_lines_allowed:
+            self._add_hierarchical_bullets_to_placeholder(placeholder_to_use, bullet_items, language)
+            logger.debug(f"Slide {slide_plan.index}: All {len(bullet_items)} bullets fit, no splitting needed.")
+            return []
+        else:
+            logger.info(f"Slide {slide_plan.index}: Splitting needed for {len(bullet_items)} bullets.")
+            bullets_for_current_slide: List[BulletItem] = []
+            lines_on_current_slide = 0
+            split_index = 0 # Marks the start of bullets for the *next* slide
+
+            for i, bullet_item in enumerate(bullet_items):
+                lines_for_this_bullet = self._estimate_lines_for_bullets(
+                    [bullet_item], placeholder_width_inches, base_font_size_pt
+                )
+
+                # Ensure at least one bullet is on the slide, even if it exceeds max_lines.
+                if not bullets_for_current_slide or (lines_on_current_slide + lines_for_this_bullet <= max_lines_allowed) :
+                    bullets_for_current_slide.append(bullet_item)
+                    lines_on_current_slide += lines_for_this_bullet
+                    split_index = i + 1
+                else:
+                    # This bullet causes overflow for the current set.
+                    # split_index is already correctly set to the start of this overflowing bullet.
+                    break
+
+            # Add the determined bullets to the current slide's placeholder
+            if bullets_for_current_slide:
+                self._add_hierarchical_bullets_to_placeholder(placeholder_to_use, bullets_for_current_slide, language)
+                logger.info(f"Slide {slide_plan.index}: Added {len(bullets_for_current_slide)} bullets ({lines_on_current_slide} lines) to current slide.")
+            else: # Should not happen if bullet_items is not empty due to "if not bullets_for_current_slide" logic
+                logger.warning(f"Slide {slide_plan.index}: No bullets added to current slide during split. This indicates an issue.")
+
+
+            remaining_bullets = bullet_items[split_index:]
+            if remaining_bullets:
+                logger.info(f"Slide {slide_plan.index}: {len(remaining_bullets)} bullets remaining for new slide(s).")
+                new_slide_plan_data = {
+                    "index": -1, # Placeholder index; to be managed by caller
+                    "title": f"{slide_plan.title} {self.overflow_config.split_slide_title_suffix}",
+                    "layout_id": slide_plan.layout_id,
+                    "slide_type": slide_plan.slide_type, # Or a default like "content"
+                    "bullet_hierarchy": remaining_bullets,
+                    "bullets": [], # Clear legacy bullets field
+                    "image_query": slide_plan.image_query, # Preserve other fields
+                    "chart_data": slide_plan.chart_data,
+                    "speaker_notes": slide_plan.speaker_notes or "Content continued from previous slide.",
+                    "summarized_by_llm": slide_plan.summarized_by_llm,
+                    "font_adjustment": None, # Typically None for a new slide from split
+                    "image_alt_text": slide_plan.image_alt_text, # Preserve
+                    "needs_splitting": False # Assume this new plan might or might not need further splitting
+                }
+                try:
+                    new_slide = SlidePlan(**new_slide_plan_data)
+                    newly_created_slides.append(new_slide)
+                    logger.info(f"Created new SlidePlan for continued content from slide {slide_plan.index} with title '{new_slide.title}'.")
+                except Exception as e:
+                    logger.error(f"Error creating new SlidePlan during split: {e}. Data: {new_slide_plan_data}")
             
-            # For hierarchical bullets, use single placeholder to maintain structure
-            # Multi-column distribution would break hierarchy, so we use the first placeholder
-            self._add_hierarchical_bullets_to_placeholder(body_placeholders[0], bullet_items, language)
-            logger.debug(f"Added {len(bullet_items)} hierarchical bullets to slide")
+            return newly_created_slides
                 
-        except Exception as e:
-            logger.error(f"Failed to add hierarchical bullet content: {e}")
+        # Fallback if logic somehow doesn't return earlier (should not happen)
+        logger.debug(f"Slide {slide_plan.index}: Reached end of _add_hierarchical_bullet_content, returning {len(newly_created_slides)} new slides.")
+        return newly_created_slides
 
     def _distribute_bullets_across_columns(
         self, 
@@ -1053,6 +1304,75 @@ class SlideAssembler:
                 stats["visual_types"]["images"] += 1
         
         return stats
+
+    def _estimate_lines_for_bullets(
+        self,
+        bullets: List[BulletItem],
+        placeholder_width_inches: float, # Currently unused, but good for future refinement
+        base_font_size_pt: float,        # Currently unused, but good for future refinement
+        avg_chars_per_line_full_width: int = 70
+    ) -> int:
+        """
+        Estimates the total number of lines the provided bullets will occupy.
+
+        Args:
+            bullets: A list of BulletItem objects.
+            placeholder_width_inches: The width of the placeholder in inches.
+            base_font_size_pt: The base font size in points for level 0 bullets.
+            avg_chars_per_line_full_width: Average characters that fit in a line at
+                                           full placeholder width with the base font size.
+                                           This is a heuristic.
+
+        Returns:
+            Total estimated number of lines.
+        """
+        total_estimated_lines = 0
+        min_effective_chars_per_line = 20 # Minimum characters per line to avoid division by zero or overly small numbers
+
+        if not bullets:
+            return 0
+
+        for i, bullet_item in enumerate(bullets):
+            text = bullet_item.text
+            level = bullet_item.level
+
+            # Adjust avg_chars_per_line based on level.
+            # Each indentation level might reduce the effective characters per line.
+            # This is a simple heuristic.
+            level_reduction_factor = 5 # Characters to reduce per indentation level
+            effective_chars_per_line = avg_chars_per_line_full_width - (level * level_reduction_factor)
+            effective_chars_per_line = max(min_effective_chars_per_line, effective_chars_per_line)
+
+            lines_for_bullet = 0
+            if not text.strip(): # Check if text is empty or only whitespace
+                lines_for_bullet = 1 # Empty bullet still takes one line
+            else:
+                # Estimate lines based on wrapping
+                # (len(text) + effective_chars_per_line - 1) // effective_chars_per_line is ceiling division
+                estimated_wrapping_lines = (len(text) + effective_chars_per_line - 1) // effective_chars_per_line
+
+                # Count explicit newline characters
+                explicit_newlines = text.count('\n')
+
+                # The number of lines is the number of explicit newlines + 1,
+                # OR the estimated wrapping lines if that's more (e.g. long line with no newlines).
+                # However, if wrapping lines are, say, 3, and explicit newlines are 0, it means 3 lines.
+                # If wrapping lines are 1 (short text), and explicit newlines are 2 (text like "a\nb\nc"), then it's 3 lines.
+                # So, lines_for_bullet should be max of (explicit_newlines + 1) and estimated_wrapping_lines.
+                lines_for_bullet = max(estimated_wrapping_lines, explicit_newlines + 1)
+
+
+            total_estimated_lines += lines_for_bullet
+
+            # Basic logging for diagnostics, especially for long bullets or many lines
+            if lines_for_bullet > 5 or len(text) > 150:
+                logger.debug(
+                    f"Bullet {i+1} (level {level}, {len(text)} chars, {explicit_newlines} newlines) "
+                    f"estimated to take {lines_for_bullet} lines (effective_chars_per_line: {effective_chars_per_line})."
+                )
+
+        logger.debug(f"Total estimated lines for {len(bullets)} bullets: {total_estimated_lines}")
+        return total_estimated_lines
 
     def validate_slides_before_assembly(self, slides: List[SlidePlan]) -> List[str]:
         """
