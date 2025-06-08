@@ -976,6 +976,22 @@ class VectorStoreConfig(BaseModel):
         default="layouts.vec", 
         description="Path to vector store file"
     )
+    default_layout_mappings: Dict[str, int] = Field(
+        default_factory=lambda: {
+            "title": 0,
+            "content": 1,
+            "two_column": 3,
+            "image": 5,
+            "chart": 1,
+            "section": 2,
+            "blank": 6,
+            "image_content": 4,
+            "content_dense": 7,
+            "three_column": 8,
+            "comparison": 9
+        },
+        description="Default layout type to ID mappings, used as a fallback."
+    )
     
     class Config:
         """Pydantic configuration."""
@@ -987,7 +1003,20 @@ class VectorStoreConfig(BaseModel):
                 "similarity_threshold": 0.7,
                 "confidence_threshold": 0.6,
                 "max_neighbors": 5,
-                "vector_store_path": "layouts.vec"
+                "vector_store_path": "layouts.vec",
+                "default_layout_mappings": {
+                    "title": 0,
+                    "content": 1,
+                    "two_column": 3,
+                    "image": 5,
+                    "chart": 1,
+                    "section": 2,
+                    "blank": 6,
+                    "image_content": 4,
+                    "content_dense": 7,
+                    "three_column": 8,
+                    "comparison": 9
+                }
             }
         }
 
