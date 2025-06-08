@@ -1,33 +1,138 @@
-2025-06-08 19:30:42,754 - DEBUG - Slide 14 density analysis: 191 chars, ratio 1.04, action: no_action
-2025-06-08 19:30:42,754 - INFO - Rebalancing complete: 2 bullet moves, 0 slides improved to ≤ 1.0 density ratio
-2025-06-08 19:30:42,754 - DEBUG - Estimated capacity for slide 0: 350 characters
-2025-06-08 19:30:42,754 - DEBUG - Slide 0 density analysis: 36 chars, ratio 0.10, action: no_action
-2025-06-08 19:30:42,754 - DEBUG - Slide 0: Content fits after initial optimization (action: no_action). Summarized: False
-2025-06-08 19:30:42,754 - DEBUG - Estimated capacity for slide 1: 184 characters
-2025-06-08 19:30:42,754 - DEBUG - Slide 1 density analysis: 97 chars, ratio 0.53, action: no_action
-2025-06-08 19:30:42,754 - DEBUG - Slide 1: Content fits after initial optimization (action: no_action). Summarized: False
-2025-06-08 19:30:42,754 - DEBUG - Estimated capacity for slide 2: 322 characters
-2025-06-08 19:30:42,754 - DEBUG - Slide 2 density analysis: 320 chars, ratio 0.99, action: no_action
-2025-06-08 19:30:42,755 - DEBUG - Slide 2: Content fits after initial optimization (action: no_action). Summarized: False
-2025-06-08 19:30:42,755 - DEBUG - Estimated capacity for slide 3: 184 characters
-2025-06-08 19:30:42,755 - DEBUG - Slide 3 density analysis: 178 chars, ratio 0.97, action: no_action
-2025-06-08 19:30:42,755 - DEBUG - Slide 3: Content fits after initial optimization (action: no_action). Summarized: False
-2025-06-08 19:30:42,755 - DEBUG - Estimated capacity for slide 4: 184 characters
-2025-06-08 19:30:42,755 - DEBUG - Slide 4 density analysis: 188 chars, ratio 1.02, action: no_action
-2025-06-08 19:30:42,755 - DEBUG - Slide 4: Attempting dynamic layout upgrade
-⠼ 📋 Planning slide layouts...
-❌ Error during generation: 'ContentFitAnalyzer' object has no attribute 'dynamic_layout_upgrading'
-Traceback (most recent call last):
-  File "/home/dsimons/git/open-lilli/open_lilli/cli.py", line 278, in generate
-    planned_slides = slide_planner.plan_slides(outline, config)
-                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/dsimons/git/open-lilli/open_lilli/slide_planner.py", line 148, in plan_slides
-    planned_slides = self._optimize_content_fit(planned_slides, current_config)
-                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/dsimons/git/open-lilli/open_lilli/slide_planner.py", line 539, in _optimize_content_fit
-    upgraded_slide = self.content_fit_analyzer.dynamic_layout_upgrading(
-                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-AttributeError: 'ContentFitAnalyzer' object has no attribute 'dynamic_layout_upgrading'
-
-2025-06-08 19:30:42,840 - DEBUG - close.started
-2025-06-08 19:30:42,841 - DEBUG - close.complete
+⠙ 🎨 Creating visuals...2025-06-08 21:41:26,088 - INFO - Generated placeholder image: assets/placeholder_slide_10_sentiment_business_analytics.png
+2025-06-08 21:41:26,088 - INFO - Sourced image for slide 10 via VisualGenerator (GenAI/Unsplash/Placeholder): assets/placeholder_slide_10_sentiment_business_analytics.png
+2025-06-08 21:41:26,088 - INFO - Generative AI not enabled or asset_library not configured. Skipping.
+2025-06-08 21:41:26,088 - INFO - Attempting Unsplash for query: 'business report presentation'
+⠸ 🎨 Creating visuals...2025-06-08 21:41:26,387 - WARNING - Unsplash download failed for 'business report presentation': 503 Server Error: Service Unavailable for url: https://source.unsplash.com/1600x900/?business+report+presentation
+2025-06-08 21:41:26,387 - INFO - Unsplash did not return an image for query: 'business report presentation'. Proceeding to placeholder.
+2025-06-08 21:41:26,387 - INFO - All external image sources failed for query 'business report presentation'. Generating placeholder.
+⠴ 🎨 Creating visuals...2025-06-08 21:41:26,436 - INFO - Generated placeholder image: assets/placeholder_slide_11_business_report_presentation.png
+2025-06-08 21:41:26,436 - INFO - Sourced image for slide 11 via VisualGenerator (GenAI/Unsplash/Placeholder): assets/placeholder_slide_11_business_report_presentation.png
+2025-06-08 21:41:26,436 - INFO - Flagged native chart for slide 13 (type: bar)
+2025-06-08 21:41:26,436 - INFO - Generative AI not enabled or asset_library not configured. Skipping.
+2025-06-08 21:41:26,436 - INFO - Attempting Unsplash for query: 'project timeline: milestones'
+⠇ 🎨 Creating visuals...2025-06-08 21:41:26,735 - WARNING - Unsplash download failed for 'project timeline: milestones': 503 Server Error: Service Unavailable for url: https://source.unsplash.com/1600x900/?project+timeline+milestones
+2025-06-08 21:41:26,735 - INFO - Unsplash did not return an image for query: 'project timeline: milestones'. Proceeding to placeholder.
+2025-06-08 21:41:26,736 - INFO - All external image sources failed for query 'project timeline: milestones'. Generating placeholder.
+2025-06-08 21:41:26,799 - INFO - Generated placeholder image: assets/placeholder_slide_13_project_timeline_milestones.png
+2025-06-08 21:41:26,799 - INFO - Sourced image for slide 13 via VisualGenerator (GenAI/Unsplash/Placeholder): assets/placeholder_slide_13_project_timeline_milestones.png
+2025-06-08 21:41:26,799 - INFO - Generative AI not enabled or asset_library not configured. Skipping.
+2025-06-08 21:41:26,799 - INFO - Attempting Unsplash for query: 'consulting team energy sector'
+⠹ 🎨 Creating visuals...2025-06-08 21:41:27,100 - WARNING - Unsplash download failed for 'consulting team energy sector': 503 Server Error: Service Unavailable for url: https://source.unsplash.com/1600x900/?consulting+team+energy+sector
+2025-06-08 21:41:27,100 - INFO - Unsplash did not return an image for query: 'consulting team energy sector'. Proceeding to placeholder.
+2025-06-08 21:41:27,100 - INFO - All external image sources failed for query 'consulting team energy sector'. Generating placeholder.
+⠸ 🎨 Creating visuals...2025-06-08 21:41:27,161 - INFO - Generated placeholder image: assets/placeholder_slide_14_consulting_team_energy_sector.png
+2025-06-08 21:41:27,161 - INFO - Sourced image for slide 14 via VisualGenerator (GenAI/Unsplash/Placeholder): assets/placeholder_slide_14_consulting_team_energy_sector.png
+2025-06-08 21:41:27,161 - INFO - Generated visuals for 12 slides
+✅ Generated 3 charts and 12 images
+⠸ 🎨 Creating visuals...2025-06-08 21:41:27,162 - INFO - SlideAssembler initialized
+⠼ 🔍 Reviewing presentation quality...2025-06-08 21:41:27,163 - INFO - Reviewing presentation with 15 slides
+⠼ 🔍 Reviewing presentation quality...2025-06-08 21:41:40,857 - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
+2025-06-08 21:41:40,858 - INFO - Generated 9 feedback items
+2025-06-08 21:41:40,858 - INFO - Evaluating presentation against quality gates
+2025-06-08 21:41:40,858 - WARNING - TemplateStyle or its slide dimensions not available. Skipping alignment and overset text checks.
+2025-06-08 21:41:40,858 - WARNING - Skipping contrast ratio check: TemplateStyle not found on Reviewer instance.
+2025-06-08 21:41:40,859 - INFO - Quality gates evaluation completed: needs_fix (3/7 gates passed)
+✅ Iteration 1 - Score: 0/10, Gates: 3/7
+🔄 Regenerating 2 slides based on feedback...
+⠼ 🔍 Reviewing presentation quality...2025-06-08 21:41:40,860 - INFO - RegenerationManager initialized
+2025-06-08 21:41:40,860 - INFO - Assembling presentation with 15 slides in language: en
+2025-06-08 21:41:40,860 - INFO - Output path: temp_iteration_1.pptx
+⠇ 🔍 Reviewing presentation quality...2025-06-08 21:41:41,088 - ERROR - Failed to add image 'assets/placeholder_slide_1_stakeholder_engagement_energy_transition.png': 'SlidePart' object has no attribute 'presentation'
+2025-06-08 21:41:41,102 - ERROR - Failed to add image 'assets/placeholder_slide_3_research_methodology_energy_sector.png': 'SlidePart' object has no attribute 'presentation'
+2025-06-08 21:41:41,111 - ERROR - Failed to add image 'assets/placeholder_slide_4_workshop_stakeholder_alignment.png': 'SlidePart' object has no attribute 'presentation'
+2025-06-08 21:41:41,119 - ERROR - Failed to add image 'assets/placeholder_slide_5_media_analysis_energy_companies.png': 'SlidePart' object has no attribute 'presentation'
+2025-06-08 21:41:41,127 - INFO - NativeChartBuilder initialized
+2025-06-08 21:41:41,134 - INFO - Created native ChartType.COLUMN chart: Chart
+2025-06-08 21:41:41,134 - ERROR - Failed to add image 'assets/placeholder_slide_6_investment_business_analytics.png': 'SlidePart' object has no attribute 'presentation'
+2025-06-08 21:41:41,142 - ERROR - Failed to add image 'assets/placeholder_slide_7_executive_interviews_energy_transition.png': 'SlidePart' object has no attribute 'presentation'
+2025-06-08 21:41:41,149 - ERROR - Failed to add image 'assets/placeholder_slide_8_stakeholder_analysis_energy.png': 'SlidePart' object has no attribute 'presentation'
+2025-06-08 21:41:41,158 - ERROR - Failed to add image 'assets/placeholder_slide_9_data_analysis_energy_transition.png': 'SlidePart' object has no attribute 'presentation'
+2025-06-08 21:41:41,163 - WARNING - No content placeholder found, looking for any text placeholder
+2025-06-08 21:41:41,163 - INFO - NativeChartBuilder initialized
+2025-06-08 21:41:41,169 - INFO - Created native ChartType.COLUMN chart: Chart
+2025-06-08 21:41:41,169 - ERROR - Failed to add image 'assets/placeholder_slide_10_sentiment_business_analytics.png': 'SlidePart' object has no attribute 'presentation'
+2025-06-08 21:41:41,176 - ERROR - Failed to add image 'assets/placeholder_slide_11_business_report_presentation.png': 'SlidePart' object has no attribute 'presentation'
+⠏ 🔍 Reviewing presentation quality...2025-06-08 21:41:41,193 - INFO - NativeChartBuilder initialized
+2025-06-08 21:41:41,193 - ERROR - Failed to convert legacy chart data: 8 validation errors for NativeChartData
+series.0.values.str
+  Input should be a valid string [type=string_type, input_value=[[1], [2], [3, 4], [4, 5], [5, 6], [7], [8]], input_type=list]
+    For further information visit https://errors.pydantic.dev/2.11/v/string_type
+series.0.values.list[float].0
+  Input should be a valid number [type=float_type, input_value=[1], input_type=list]
+    For further information visit https://errors.pydantic.dev/2.11/v/float_type
+series.0.values.list[float].1
+  Input should be a valid number [type=float_type, input_value=[2], input_type=list]
+    For further information visit https://errors.pydantic.dev/2.11/v/float_type
+series.0.values.list[float].2
+  Input should be a valid number [type=float_type, input_value=[3, 4], input_type=list]
+    For further information visit https://errors.pydantic.dev/2.11/v/float_type
+series.0.values.list[float].3
+  Input should be a valid number [type=float_type, input_value=[4, 5], input_type=list]
+    For further information visit https://errors.pydantic.dev/2.11/v/float_type
+series.0.values.list[float].4
+  Input should be a valid number [type=float_type, input_value=[5, 6], input_type=list]
+    For further information visit https://errors.pydantic.dev/2.11/v/float_type
+series.0.values.list[float].5
+  Input should be a valid number [type=float_type, input_value=[7], input_type=list]
+    For further information visit https://errors.pydantic.dev/2.11/v/float_type
+series.0.values.list[float].6
+  Input should be a valid number [type=float_type, input_value=[8], input_type=list]
+    For further information visit https://errors.pydantic.dev/2.11/v/float_type
+2025-06-08 21:41:41,193 - WARNING - Failed to convert chart data to native format
+2025-06-08 21:41:41,204 - ERROR - Failed to add image 'assets/placeholder_slide_14_consulting_team_energy_sector.png': 'SlidePart' object has no attribute 'presentation'
+2025-06-08 21:41:41,208 - INFO - Starting presentation style validation for language: en. Mode: strict.
+2025-06-08 21:41:41,223 - INFO - Total feedback items generated: 49.
+2025-06-08 21:41:41,223 - ERROR - Strict mode: Style validation failed. Raising StyleError.
+⠋ 🔍 Reviewing presentation quality...
+❌ Error during generation: Style validation failed with 49 feedback items in 'strict' mode.
+Violations:
+  - Unknown: No description
+  - Unknown: No description
+  - Unknown: No description
+  - Unknown: No description
+  - Unknown: No description
+  - Unknown: No description
+  - Unknown: No description
+  - Unknown: No description
+  - Unknown: No description
+  - Unknown: No description
+  - Unknown: No description
+  - Unknown: No description
+  - Unknown: No description
+  - Unknown: No description
+  - Unknown: No description
+  - Unknown: No description
+  - Unknown: No description
+  - Unknown: No description
+  - Unknown: No description
+  - Unknown: No description
+  - Unknown: No description
+  - Unknown: No description
+  - Unknown: No description
+  - Unknown: No description
+  - Unknown: No description
+  - Unknown: No description
+  - Unknown: No description
+  - Unknown: No description
+  - Unknown: No description
+  - Unknown: No description
+  - Unknown: No description
+  - Unknown: No description
+  - Unknown: No description
+  - Unknown: No description
+  - Unknown: No description
+  - Unknown: No description
+  - Unknown: No description
+  - Unknown: No description
+  - Unknown: No description
+  - Unknown: No description
+  - Unknown: No description
+  - Unknown: No description
+  - Unknown: No description
+  - Unknown: No description
+  - Unknown: No description
+  - Unknown: No description
+  - Unknown: No description
+  - Unknown: No description
+  - Unknown: No description
+Run again with --debug or --log-file for details
