@@ -82,7 +82,7 @@ class TestOutlineGenerator:
         call_args = self.mock_client.chat.completions.create.call_args
         assert call_args[1]["model"] == "gpt-4"
         assert call_args[1]["temperature"] == 0.3
-        assert call_args[1]["response_format"] == {"type": "json_object"}
+        assert "response_format" not in call_args[1]
 
     def test_build_outline_prompt(self):
         """Test prompt building with different configurations."""
