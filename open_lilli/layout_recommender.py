@@ -319,35 +319,39 @@ class LayoutRecommender:
         layout_type: str, 
         available_layouts: Optional[Dict[str, int]]
     ) -> int:
-        """
-        Get layout ID for a given layout type.
-        
-        Args:
-            layout_type: Type of layout (e.g., "two_column")
-            available_layouts: Available layout mappings
-            
-        Returns:
-            Layout ID (integer)
-        """
-        if available_layouts and layout_type in available_layouts:
-            return available_layouts[layout_type]
-        
-        # Default mappings if no available_layouts provided (T-99 Extended)
-        default_mappings = {
-            "title": 0,
-            "content": 1,
-            "two_column": 3,
-            "image": 5,
-            "chart": 1,
-            "section": 2,
-            "blank": 6,
-            "image_content": 4,
-            "content_dense": 7,
-            "three_column": 8,
-            "comparison": 9
-        }
-        
-        return default_mappings.get(layout_type, 1)
+        if available_layouts:
+            if layout_type in available_layouts:
+                logger.debug(f"Layout type '{layout_type}' found in available_layouts. Using ID: {available_layouts[layout_type]}")
+                return available_layouts[layout_type]
+            else:
+                logger.warning(
+                    f"Layout type '{layout_type}' not found in available_layouts (keys: {list(available_layouts.keys())}). "
+                    f"Attempting fallback to 'content' layout from available_layouts."
+                )
+                if "content" in available_layouts:
+                    logger.info(f"Using 'content' layout (ID: {available_layouts['content']}) as fallback for '{layout_type}'.")
+                    return available_layouts["content"]
+                else:
+                    # If 'content' is also not in available_layouts, then consult internal defaults for the original type
+                    logger.warning(f"'content' layout also not in available_layouts. Consulting internal default_mappings for '{layout_type}'.")
+                    default_id = self.config.default_layout_mappings.get(layout_type)
+                    if default_id is not None:
+                        logger.info(f"Using internal default ID {default_id} for '{layout_type}'. This ID might not be valid for the current template.")
+                        return default_id
+                    else:
+                        logger.warning(f"Layout type '{layout_type}' also not in internal default_mappings. Falling back to layout ID 0 (or first available).")
+                        # Fallback to the first layout in available_layouts if any, else 0
+                        if available_layouts: # Check if available_layouts is not empty
+                            return next(iter(available_layouts.values()))
+                        return 0 # Absolute fallback
+        else:
+            logger.warning("No available_layouts provided to _get_layout_id. Using internal default_mappings.")
+            default_id = self.config.default_layout_mappings.get(layout_type)
+            if default_id is not None:
+                logger.info(f"Using internal default ID {default_id} for '{layout_type}'.")
+                return default_id
+            logger.warning(f"Layout type '{layout_type}' not in internal default_mappings. Falling back to layout ID 1 (generic content).")
+            return 1 # Default to 1 (often a content slide) if no info at all
 
     def analyze_content_semantics(self, slide: SlidePlan) -> Dict[str, any]:
         """

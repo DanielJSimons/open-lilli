@@ -946,10 +946,17 @@ class SlideAssembler:
                 run = p.runs[0]
                 
                 # Adjust font size based on hierarchy level (T-100)
-                base_size = 18
-                size_reduction = bullet_level * 2  # Reduce by 2pt per level
-                adjusted_size = max(12, base_size - size_reduction)  # Minimum 12pt
-                run.font.size = Pt(adjusted_size)
+                # If autofit is enabled, set a smaller, consistent initial size.
+                # Otherwise, use the original level-based sizing.
+                if self.overflow_config.enable_auto_fit_text:
+                    run.font.size = Pt(14) # Smaller default for autofit
+                    logger.debug(f"Set initial font size to 14pt for bullet level {bullet_level} (autofit enabled).")
+                else:
+                    base_size = 18
+                    size_reduction = bullet_level * 2  # Reduce by 2pt per level
+                    adjusted_size = max(12, base_size - size_reduction)  # Minimum 12pt
+                    run.font.size = Pt(adjusted_size)
+                    logger.debug(f"Applied bullet level {bullet_level} with font size {adjusted_size}pt (autofit disabled).")
 
                 # Proactive font selection for bullets
                 if self.template_parser.template_style:
@@ -958,7 +965,7 @@ class SlideAssembler:
                         run.font.name = specific_font_name
                         logger.debug(f"Applied language-specific font '{specific_font_name}' for bullets in language '{language.lower()}'")
 
-                logger.debug(f"Applied bullet level {bullet_level} with font size {adjusted_size}pt")
+                # Logger line for font size is now inside the conditional block above.
 
         # RTL alignment for bullets
         if language.lower() in RTL_LANGUAGES:
@@ -1063,6 +1070,7 @@ class SlideAssembler:
                     picture_shape.name = alt_text
                 logger.debug(f"Inserted chart into picture placeholder: {chart_path}")
             else:
+                logger.warning(f"No picture placeholder found on slide using layout '{slide.slide_layout.name}'. Falling back to adding chart image as floating.")
                 # Use consolidated fallback logic
                 self._fallback_add_picture(slide, str(chart_path), "bottom_right", 4.0, 3.0, alt_text)
                 
@@ -1085,6 +1093,7 @@ class SlideAssembler:
                     picture_shape.name = alt_text
                 logger.debug(f"Inserted image into picture placeholder: {image_path}")
             else:
+                logger.warning(f"No picture placeholder found on slide using layout '{slide.slide_layout.name}'. Falling back to adding image as floating.")
                 # Use consolidated fallback logic
                 self._fallback_add_picture(slide, str(image_path), "top_right", 3.0, 2.0, alt_text)
                 
@@ -1598,8 +1607,8 @@ class SlideAssembler:
         qg_config = self.validation_config.quality_gates_config
         # qg_config and qg_config.enable_alignment_check are also checked by caller.
 
-        slide_width_emu = slide.parent.slide_width
-        slide_height_emu = slide.parent.slide_height
+        slide_width_emu = slide.part.package.presentation_part.presentation.slide_width
+        slide_height_emu = slide.part.package.presentation_part.presentation.slide_height
         margin_top_emu = Inches(qg_config.slide_margin_top_inches)
         margin_bottom_emu = Inches(qg_config.slide_margin_bottom_inches)
         margin_left_emu = Inches(qg_config.slide_margin_left_inches)
@@ -1700,12 +1709,12 @@ class SlideAssembler:
             logger.debug("Alignment check skipped as it's not enabled in QualityGatesConfig or QualityGatesConfig is missing.")
             return feedback_items
 
-        if not slide.parent or not hasattr(slide.parent, 'slide_width') or not hasattr(slide.parent, 'slide_height'):
+        if not slide.part or not slide.part.package or not slide.part.package.presentation_part or not slide.part.package.presentation_part.presentation or not hasattr(slide.part.package.presentation_part.presentation, 'slide_width') or not hasattr(slide.part.package.presentation_part.presentation, 'slide_height'):
             logger.warning("Cannot access presentation-level slide dimensions for alignment check. Skipping.")
             return feedback_items
 
-        slide_width_emu = slide.parent.slide_width
-        slide_height_emu = slide.parent.slide_height
+        slide_width_emu = slide.part.package.presentation_part.presentation.slide_width
+        slide_height_emu = slide.part.package.presentation_part.presentation.slide_height
         margin_top_emu = Inches(qg_config.slide_margin_top_inches)
         margin_bottom_emu = Inches(qg_config.slide_margin_bottom_inches)
         margin_left_emu = Inches(qg_config.slide_margin_left_inches)
@@ -2133,6 +2142,7 @@ class SlideAssembler:
         text_frame = shape.text_frame
         
         placeholder_type = None
+        # Ensure shape.placeholder_format exists and then check for type attribute
         if hasattr(shape, 'placeholder_format') and shape.placeholder_format:
             if hasattr(shape.placeholder_format, 'type'):
                  placeholder_type = shape.placeholder_format.type
