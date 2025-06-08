@@ -427,7 +427,7 @@ class StyleValidationConfig(BaseModel):
     
     enabled: bool = Field(default=True, description="Enable style validation")
     mode: str = Field(
-        default="strict", 
+        default="lenient", 
         description="Validation mode: 'strict', 'lenient', or 'disabled'"
     )
     font_size_tolerance: int = Field(

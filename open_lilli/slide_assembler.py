@@ -683,8 +683,15 @@ class SlideAssembler:
             else:
                 # Add as free-floating image
                 # Position in bottom right area
-                slide_width = slide.part.presentation.slide_width
-                slide_height = slide.part.presentation.slide_height
+                try:
+                    # Try the more direct approach first
+                    prs = slide.part.package.presentation_part.presentation
+                    slide_width = prs.slide_width
+                    slide_height = prs.slide_height
+                except AttributeError:
+                    # Fallback to default dimensions if access fails
+                    slide_width = Inches(10)  # Standard slide width
+                    slide_height = Inches(7.5)  # Standard slide height
                 
                 img_width = Inches(4)
                 img_height = Inches(3)
@@ -723,7 +730,13 @@ class SlideAssembler:
             else:
                 # Add as free-floating image
                 # Position in upper right area if no chart is present
-                slide_width = slide.part.presentation.slide_width
+                try:
+                    # Try the more direct approach first
+                    prs = slide.part.package.presentation_part.presentation
+                    slide_width = prs.slide_width
+                except AttributeError:
+                    # Fallback to default dimensions if access fails
+                    slide_width = Inches(10)  # Standard slide width
                 
                 img_width = Inches(3)
                 img_height = Inches(2)

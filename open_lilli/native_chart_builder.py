@@ -437,10 +437,15 @@ class NativeChartBuilder:
             if "values" in legacy_data or "y" in legacy_data:
                 # Single series format
                 values = legacy_data.get("values", legacy_data.get("y", [1]))
+                # Flatten nested lists if present
+                values = self._flatten_values(values)
                 series = [{"name": "Series 1", "values": values}]
             elif "series" in legacy_data:
                 # Multi-series format
-                series = legacy_data["series"]
+                series = []
+                for s in legacy_data["series"]:
+                    series_data = {"name": s.get("name", "Series"), "values": self._flatten_values(s.get("values", []))}
+                    series.append(series_data)
             
             # Create NativeChartData
             native_chart = NativeChartData(
@@ -461,3 +466,34 @@ class NativeChartBuilder:
         except Exception as e:
             logger.error(f"Failed to convert legacy chart data: {e}")
             return None
+    
+    def _flatten_values(self, values: List) -> List[float]:
+        """
+        Flatten nested lists and convert to floats.
+        
+        Args:
+            values: List that may contain nested lists
+            
+        Returns:
+            Flattened list of float values
+        """
+        flattened = []
+        for item in values:
+            if isinstance(item, list):
+                # If item is a list, take the first element (or average if multiple)
+                if len(item) > 0:
+                    if len(item) == 1:
+                        flattened.append(float(item[0]))
+                    else:
+                        # Take average of multiple values
+                        avg = sum(item) / len(item)
+                        flattened.append(float(avg))
+                else:
+                    flattened.append(0.0)
+            else:
+                # Item is already a single value
+                try:
+                    flattened.append(float(item))
+                except (ValueError, TypeError):
+                    flattened.append(0.0)
+        return flattened
