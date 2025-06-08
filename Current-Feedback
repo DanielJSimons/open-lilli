@@ -1,55 +1,22 @@
-2025-06-08 19:24:13,700 - DEBUG - receive_response_body.started request=<Request [b'POST']>
-2025-06-08 19:24:13,700 - DEBUG - receive_response_body.complete
-2025-06-08 19:24:13,700 - DEBUG - response_closed.started
-2025-06-08 19:24:13,700 - DEBUG - response_closed.complete
-2025-06-08 19:24:13,700 - DEBUG - HTTP Response: POST https://api.openai.com/v1/chat/completions "200 OK" Headers({'date': 'Sun, 08 Jun 2025 18:24:13 GMT', 'content-type': 'application/json', 'transfer-encoding': 'chunked', 'connection': 'keep-alive', 'access-control-expose-headers': 'X-Request-ID', 'openai-organization': 'brunswick-group-9kojjv', 'openai-processing-ms': '2314', 'openai-version': '2020-10-01', 'x-envoy-upstream-service-time': '2318', 'x-ratelimit-limit-requests': '10000', 'x-ratelimit-limit-tokens': '10000000', 'x-ratelimit-remaining-requests': '9999', 'x-ratelimit-remaining-tokens': '9999513', 'x-ratelimit-reset-requests': '6ms', 'x-ratelimit-reset-tokens': '2ms', 'x-request-id': 'req_9a2ba1c855e3a3115460a4549fe0d9d1', 'strict-transport-security': 'max-age=31536000; includeSubDomains; preload', 'cf-cache-status': 'DYNAMIC', 'x-content-type-options': 'nosniff', 'server': 'cloudflare', 'cf-ray': '94ca6cb71db2a62a-LHR', 'content-encoding': 'gzip', 'alt-svc': 'h3=":443"; ma=86400'})
-2025-06-08 19:24:13,701 - DEBUG - request_id: req_9a2ba1c855e3a3115460a4549fe0d9d1
-2025-06-08 19:24:13,701 - DEBUG - LLM recommendation for slide 13: content (confidence: 0.90)
-2025-06-08 19:24:13,701 - DEBUG - Getting LLM-based layout recommendation for: Fee Structure & Next Steps
-2025-06-08 19:24:13,702 - DEBUG - Semantic analysis for 'Fee Structure & Next Steps': {'comparison_signals': False, 'list_structure': 'structured', 'visual_requirements': ['chart', 'process'], 'content_density': 'low', 'hierarchical_content': False, 'process_flow': True, 'numeric_data': True, 'key_concepts': ['analysis'], 'layout_hints': ['content', 'blank']}
-2025-06-08 19:24:13,702 - DEBUG - Request options: {'method': 'post', 'url': '/chat/completions', 'files': None, 'idempotency_key': 'stainless-python-retry-c6fafe37-e3ce-4f51-9803-77c7fac967ea', 'json_data': {'messages': [{'role': 'system', 'content': 'You are an expert presentation designer who selects optimal slide layouts based on content analysis. Provide structured JSON responses.'}, {'role': 'user', 'content': 'Analyze this slide content and recommend the best layout:\n\nSLIDE CONTENT:\nTitle: "Fee Structure & Next Steps"\nBullets: 4 items\nContent: [\'Fixed fee: $200,000 (all-inclusive)\', \'Covers fieldwork, analysis, and reporting\', \'Flexible engagement to match priorities\', \'Next: Align on scope and timing\']\n\nSEMANTIC ANALYSIS:\n- Comparison signals: False\n- List structure: structured\n- Visual requirements: [\'chart\', \'process\']\n- Content density: low\n- Hierarchical content: False\n- Process flow: True\n- Numeric data: True\n- Key concepts: [\'analysis\']\n\nAVAILABLE LAYOUTS: content, layout_3, layout_4, image_content, title, section, image, layout_13, two_column, layout_42, blank\n\nLAYOUT DESCRIPTIONS:\n- title: For presentation titles and section headers\n- content: Standard layout with title and bullet points area\n- two_column: Side-by-side content areas for comparisons\n- image: Layout optimized for visual content with text\n- chart: Layout designed for data visualization\n- section: Section divider with large title\n- blank: Maximum flexibility for custom arrangements\n- image_content: Hybrid layout combining images with content areas\n- content_dense: Optimized layout for high-density content with better spacing\n- three_column: Multi-column layout for maximum content organization\n- comparison: Specialized layout for side-by-side comparisons\n\nPlease recommend the best layout and provide your response in this JSON format:\n{\n    "layout_type": "recommended_layout_name",\n    "confidence": 0.85,\n    "reasoning": "Detailed explanation of why this layout works best for this content",\n    "alternative_options": ["layout2", "layout3"]\n}\n\nFocus on matching content characteristics to layout strengths. Consider content density, visual needs, and semantic patterns.'}], 'model': 'gpt-4o-mini', 'max_tokens': 500, 'temperature': 0.1}}
-2025-06-08 19:24:13,703 - DEBUG - Sending HTTP Request: POST https://api.openai.com/v1/chat/completions
-2025-06-08 19:24:13,703 - DEBUG - send_request_headers.started request=<Request [b'POST']>
-2025-06-08 19:24:13,703 - DEBUG - send_request_headers.complete
-2025-06-08 19:24:13,703 - DEBUG - send_request_body.started request=<Request [b'POST']>
-2025-06-08 19:24:13,704 - DEBUG - send_request_body.complete
-2025-06-08 19:24:13,704 - DEBUG - receive_response_headers.started request=<Request [b'POST']>
-⠼ 📋 Planning slide layouts...2025-06-08 19:24:17,023 - DEBUG - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Sun, 08 Jun 2025 18:24:17 GMT'), (b'Content-Type', b'application/json'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'access-control-expose-headers', b'X-Request-ID'), (b'openai-organization', b'brunswick-group-9kojjv'), (b'openai-processing-ms', b'3097'), (b'openai-version', b'2020-10-01'), (b'x-envoy-upstream-service-time', b'3099'), (b'x-ratelimit-limit-requests', b'10000'), (b'x-ratelimit-limit-tokens', b'10000000'), (b'x-ratelimit-remaining-requests', b'9999'), (b'x-ratelimit-remaining-tokens', b'9999522'), (b'x-ratelimit-reset-requests', b'6ms'), (b'x-ratelimit-reset-tokens', b'2ms'), (b'x-request-id', b'req_6bc6f5f134c7074fab7efc8dcf79ed42'), (b'strict-transport-security', b'max-age=31536000; includeSubDomains; preload'), (b'cf-cache-status', b'DYNAMIC'), (b'X-Content-Type-Options', b'nosniff'), (b'Server', b'cloudflare'), (b'CF-RAY', b'94ca6cc70dd0a62a-LHR'), (b'Content-Encoding', b'gzip'), (b'alt-svc', b'h3=":443"; ma=86400')])
-2025-06-08 19:24:17,023 - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
-2025-06-08 19:24:17,023 - DEBUG - receive_response_body.started request=<Request [b'POST']>
-2025-06-08 19:24:17,023 - DEBUG - receive_response_body.complete
-2025-06-08 19:24:17,023 - DEBUG - response_closed.started
-2025-06-08 19:24:17,023 - DEBUG - response_closed.complete
-2025-06-08 19:24:17,023 - DEBUG - HTTP Response: POST https://api.openai.com/v1/chat/completions "200 OK" Headers({'date': 'Sun, 08 Jun 2025 18:24:17 GMT', 'content-type': 'application/json', 'transfer-encoding': 'chunked', 'connection': 'keep-alive', 'access-control-expose-headers': 'X-Request-ID', 'openai-organization': 'brunswick-group-9kojjv', 'openai-processing-ms': '3097', 'openai-version': '2020-10-01', 'x-envoy-upstream-service-time': '3099', 'x-ratelimit-limit-requests': '10000', 'x-ratelimit-limit-tokens': '10000000', 'x-ratelimit-remaining-requests': '9999', 'x-ratelimit-remaining-tokens': '9999522', 'x-ratelimit-reset-requests': '6ms', 'x-ratelimit-reset-tokens': '2ms', 'x-request-id': 'req_6bc6f5f134c7074fab7efc8dcf79ed42', 'strict-transport-security': 'max-age=31536000; includeSubDomains; preload', 'cf-cache-status': 'DYNAMIC', 'x-content-type-options': 'nosniff', 'server': 'cloudflare', 'cf-ray': '94ca6cc70dd0a62a-LHR', 'content-encoding': 'gzip', 'alt-svc': 'h3=":443"; ma=86400'})
-2025-06-08 19:24:17,024 - DEBUG - request_id: req_6bc6f5f134c7074fab7efc8dcf79ed42
-2025-06-08 19:24:17,024 - DEBUG - LLM recommendation for slide 14: content (confidence: 0.90)
-2025-06-08 19:24:17,024 - INFO - Optimizing slides for content fit
-2025-06-08 19:24:17,024 - INFO - Applying smart content rebalancing across slides
-2025-06-08 19:24:17,024 - INFO - Starting bullet rebalancing across 15 slides
-2025-06-08 19:24:17,024 - DEBUG - Estimated capacity for slide 0: 350 characters
-2025-06-08 19:24:17,024 - DEBUG - Slide 0 density analysis: 36 chars, ratio 0.10, action: no_action
-2025-06-08 19:24:17,024 - DEBUG - Estimated capacity for slide 1: 184 characters
-2025-06-08 19:24:17,024 - DEBUG - Slide 1 density analysis: 309 chars, ratio 1.68, action: split_slide
-2025-06-08 19:24:17,024 - DEBUG - Estimated capacity for slide 1: 184 characters
-2025-06-08 19:24:17,024 - DEBUG - Slide 1 density analysis: 309 chars, ratio 1.68, action: split_slide
-2025-06-08 19:24:17,024 - DEBUG - Estimated capacity for slide 2: 350 characters
-2025-06-08 19:24:17,024 - DEBUG - Slide 2 density analysis: 20 chars, ratio 0.06, action: no_action
-2025-06-08 19:24:17,024 - DEBUG - Estimated capacity for slide 1: 184 characters
-2025-06-08 19:24:17,025 - DEBUG - Slide 1 density analysis: 256 chars, ratio 1.39, action: rewrite_content
-2025-06-08 19:24:17,025 - DEBUG - Estimated capacity for slide 2: 322 characters
-2025-06-08 19:24:17,025 - DEBUG - Slide 2 density analysis: 73 chars, ratio 0.23, action: no_action
-2025-06-08 19:24:17,025 - DEBUG - Moved bullet 'Identify effective communicati...' from slide 1 to 2 (forward)
-2025-06-08 19:24:17,025 - DEBUG - Estimated capacity for slide 1: 184 characters
-2025-06-08 19:24:17,025 - DEBUG - Slide 1 density analysis: 167 chars, ratio 0.91, action: no_action
-2025-06-08 19:24:17,025 - DEBUG - Estimated capacity for slide 2: 322 characters
-2025-06-08 19:24:17,025 - DEBUG - Slide 2 density analysis: 162 chars, ratio 0.50, action: no_action
-2025-06-08 19:24:17,025 - DEBUG - Moved bullet 'Assess BP's influence with inv...' from slide 1 to 2 (forward)
-2025-06-08 19:24:17,025 - DEBUG - Estimated capacity for slide 1: 200 characters
-2025-06-08 19:24:17,025 - DEBUG - Slide 1 density analysis: 28 chars, ratio 0.14, action: no_action
-2025-06-08 19:24:17,025 - DEBUG - Estimated capacity for slide 2: 322 characters
-2025-06-08 19:24:17,025 - DEBUG - Slide 2 density analysis: 301 chars, ratio 0.93, action: no_action
-⠴ 📋 Planning slide layouts...
-❌ Error during generation: pop from empty list
+2025-06-08 19:30:42,754 - DEBUG - Slide 14 density analysis: 191 chars, ratio 1.04, action: no_action
+2025-06-08 19:30:42,754 - INFO - Rebalancing complete: 2 bullet moves, 0 slides improved to ≤ 1.0 density ratio
+2025-06-08 19:30:42,754 - DEBUG - Estimated capacity for slide 0: 350 characters
+2025-06-08 19:30:42,754 - DEBUG - Slide 0 density analysis: 36 chars, ratio 0.10, action: no_action
+2025-06-08 19:30:42,754 - DEBUG - Slide 0: Content fits after initial optimization (action: no_action). Summarized: False
+2025-06-08 19:30:42,754 - DEBUG - Estimated capacity for slide 1: 184 characters
+2025-06-08 19:30:42,754 - DEBUG - Slide 1 density analysis: 97 chars, ratio 0.53, action: no_action
+2025-06-08 19:30:42,754 - DEBUG - Slide 1: Content fits after initial optimization (action: no_action). Summarized: False
+2025-06-08 19:30:42,754 - DEBUG - Estimated capacity for slide 2: 322 characters
+2025-06-08 19:30:42,754 - DEBUG - Slide 2 density analysis: 320 chars, ratio 0.99, action: no_action
+2025-06-08 19:30:42,755 - DEBUG - Slide 2: Content fits after initial optimization (action: no_action). Summarized: False
+2025-06-08 19:30:42,755 - DEBUG - Estimated capacity for slide 3: 184 characters
+2025-06-08 19:30:42,755 - DEBUG - Slide 3 density analysis: 178 chars, ratio 0.97, action: no_action
+2025-06-08 19:30:42,755 - DEBUG - Slide 3: Content fits after initial optimization (action: no_action). Summarized: False
+2025-06-08 19:30:42,755 - DEBUG - Estimated capacity for slide 4: 184 characters
+2025-06-08 19:30:42,755 - DEBUG - Slide 4 density analysis: 188 chars, ratio 1.02, action: no_action
+2025-06-08 19:30:42,755 - DEBUG - Slide 4: Attempting dynamic layout upgrade
+⠼ 📋 Planning slide layouts...
+❌ Error during generation: 'ContentFitAnalyzer' object has no attribute 'dynamic_layout_upgrading'
 Traceback (most recent call last):
   File "/home/dsimons/git/open-lilli/open_lilli/cli.py", line 278, in generate
     planned_slides = slide_planner.plan_slides(outline, config)
@@ -57,16 +24,10 @@ Traceback (most recent call last):
   File "/home/dsimons/git/open-lilli/open_lilli/slide_planner.py", line 148, in plan_slides
     planned_slides = self._optimize_content_fit(planned_slides, current_config)
                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/dsimons/git/open-lilli/open_lilli/slide_planner.py", line 518, in _optimize_content_fit
-    rebalanced_slides = self.smart_fitter.rebalance(slides, template_style)
-                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/dsimons/git/open-lilli/open_lilli/content_fit_analyzer.py", line 723, in rebalance
-    moves = self._redistribute_between_slides(
-            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/dsimons/git/open-lilli/open_lilli/content_fit_analyzer.py", line 824, in _redistribute_between_slides
-    moved_bullet = source_slide.bullets.pop()
-                   ^^^^^^^^^^^^^^^^^^^^^^^^^^
-IndexError: pop from empty list
+  File "/home/dsimons/git/open-lilli/open_lilli/slide_planner.py", line 539, in _optimize_content_fit
+    upgraded_slide = self.content_fit_analyzer.dynamic_layout_upgrading(
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'ContentFitAnalyzer' object has no attribute 'dynamic_layout_upgrading'
 
-2025-06-08 19:24:17,118 - DEBUG - close.started
-2025-06-08 19:24:17,118 - DEBUG - close.complete
+2025-06-08 19:30:42,840 - DEBUG - close.started
+2025-06-08 19:30:42,841 - DEBUG - close.complete
