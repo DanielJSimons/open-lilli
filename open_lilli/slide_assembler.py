@@ -1689,7 +1689,7 @@ class SlideAssembler:
 
         return action_taken
 
-    def _check_shape_alignment_against_margins(self, shape, slide, slide_index: int, language: str) -> List[Dict[str, any]]:
+    def _check_shape_alignment_against_margins(self, shape, slide, slide_index: int, language: str) -> List[ReviewFeedback]:
         """
         Checks if a shape is within the defined slide margins.
         Args:
@@ -1954,7 +1954,7 @@ class SlideAssembler:
                  logger.warning(f"Failed to autofix text overflow for shape '{shape.name or shape.shape_id}' on slide {slide_index}.")
             return fixed
 
-    def _check_text_frame_overflow(self, shape, slide_index: int, language: str) -> List[Dict[str, any]]:
+    def _check_text_frame_overflow(self, shape, slide_index: int, language: str) -> List[ReviewFeedback]:
         """
         Checks a single shape for text overflow.
         Args:
@@ -2235,7 +2235,7 @@ class SlideAssembler:
         slide_index: int, 
         para_index: int,
         language: str # Add language
-    ) -> List[Dict[str, any]]:
+    ) -> List[ReviewFeedback]:
         """
         Validate style for a single paragraph.
         
@@ -2247,13 +2247,13 @@ class SlideAssembler:
             language: Language code for the presentation
             
         Returns:
-            List of violation dictionaries
+            List of ReviewFeedback objects
         """
-        violations = []
+        feedback_items: List[ReviewFeedback] = []
         
         # Skip empty paragraphs
         if not paragraph.text.strip():
-            return violations
+            return feedback_items
         
         # Get expected style for this placeholder type
         expected_font = self._get_expected_font(placeholder_type, paragraph.level, language) # Pass language
@@ -2261,19 +2261,21 @@ class SlideAssembler:
         
         # Validate each run in the paragraph
         for run_index, run in enumerate(paragraph.runs):
-            run_violations = self._validate_run_style(
+            # _validate_run_style now returns List[ReviewFeedback]
+            run_feedback = self._validate_run_style(
                 run, expected_font, slide_index, para_index, run_index, language # Pass language
             )
-            violations.extend(run_violations)
+            feedback_items.extend(run_feedback)
         
         # Validate bullet style if this is a bulleted paragraph
         if expected_bullet and self.validation_config.check_bullet_styles:
-            bullet_violations = self._validate_bullet_style(
+            # Assuming _validate_bullet_style will be updated to return List[ReviewFeedback]
+            bullet_feedback = self._validate_bullet_style(
                 paragraph, expected_bullet, slide_index, para_index
             )
-            violations.extend(bullet_violations)
+            feedback_items.extend(bullet_feedback)
         
-        return violations
+        return feedback_items
 
     def _validate_run_style(
         self, 
@@ -2283,7 +2285,7 @@ class SlideAssembler:
         para_index: int, 
         run_index: int,
         language: str # Add language
-    ) -> List[Dict[str, any]]:
+    ) -> List[ReviewFeedback]:
         """
         Validate style for a single text run.
         
@@ -2296,15 +2298,15 @@ class SlideAssembler:
             language: Language code for the presentation
             
         Returns:
-            List of violation dictionaries
+            List of ReviewFeedback objects
         """
-        violations = []
+        feedback_items: List[ReviewFeedback] = []
         
         if not expected_font:
-            return violations
+            return feedback_items
         
         font = run.font
-        location = f"slide {slide_index}, paragraph {para_index}, run {run_index}"
+        location = f"slide {slide_index + 1}, paragraph {para_index + 1}, run {run_index + 1}" # User-friendly 1-based indexing
         
         # Validate font name
         if (self.validation_config.enforce_font_name and 
@@ -2312,7 +2314,6 @@ class SlideAssembler:
             font.name and 
             font.name != expected_font.name):
 
-            # Check if the actual font.name is a valid language-specific override
             is_valid_override = False
             if language and self.template_parser and self.template_parser.template_style:
                 specific_font_name = self.template_parser.template_style.language_specific_fonts.get(language.lower())
@@ -2320,55 +2321,56 @@ class SlideAssembler:
                     is_valid_override = True
 
             if not is_valid_override:
-                violations.append({
-                    'type': 'font_name',
-                    'description': f"Font name mismatch at {location}",
-                'expected': expected_font.name,
-                'actual': font.name,
-                'slide_index': slide_index
-            })
+                feedback_items.append(ReviewFeedback(
+                    slide_index=slide_index,
+                    severity="low",
+                    category="style_validation_font",
+                    message=f"Font name mismatch at {location}. Expected: '{expected_font.name}', Actual: '{font.name}'.",
+                    suggestion="Ensure font name matches the template style or language-specific settings."
+                ))
         
         # Validate font size
         if expected_font.size and font.size:
-            expected_size = expected_font.size
-            actual_size = font.size.pt
-            size_diff = abs(actual_size - expected_size)
+            expected_size_pt = expected_font.size
+            actual_size_pt = font.size.pt
+            size_diff = abs(actual_size_pt - expected_size_pt)
             
             if size_diff > self.validation_config.font_size_tolerance:
-                violations.append({
-                    'type': 'font_size',
-                    'description': f"Font size mismatch at {location}",
-                    'expected': expected_size,
-                    'actual': actual_size,
-                    'tolerance': self.validation_config.font_size_tolerance,
-                    'slide_index': slide_index
-                })
+                feedback_items.append(ReviewFeedback(
+                    slide_index=slide_index,
+                    severity="medium",
+                    category="style_validation_font",
+                    message=f"Font size mismatch at {location}. Expected: {expected_size_pt}pt, Actual: {actual_size_pt:.2f}pt (Tolerance: {self.validation_config.font_size_tolerance}pt).",
+                    suggestion="Adjust font size to match the template style."
+                ))
         
         # Validate font weight/bold
         if (self.validation_config.enforce_font_weight and 
             expected_font.weight):
-            expected_bold = expected_font.weight == "bold"
-            actual_bold = font.bold is True
+            expected_bold = expected_font.weight.lower() == "bold"
+            actual_bold = font.bold is True # font.bold can be None, True, False
             
             if expected_bold != actual_bold:
-                violations.append({
-                    'type': 'font_weight',
-                    'description': f"Font weight mismatch at {location}",
-                    'expected': expected_font.weight,
-                    'actual': "bold" if actual_bold else "normal",
-                    'slide_index': slide_index
-                })
+                feedback_items.append(ReviewFeedback(
+                    slide_index=slide_index,
+                    severity="low",
+                    category="style_validation_font",
+                    message=f"Font weight mismatch at {location}. Expected: '{expected_font.weight}', Actual: '{'bold' if actual_bold else 'normal'}'.",
+                    suggestion="Adjust font weight (bold/normal) to match the template style."
+                ))
         
         # Validate font color
         if (self.validation_config.enforce_color_compliance and 
             expected_font.color and 
             font.color):
-            color_violations = self._validate_color(
-                font.color, expected_font.color, f"font color at {location}", slide_index
+            # _validate_color already returns List[ReviewFeedback]
+            # Ensure the location string passed to _validate_color is consistent
+            color_feedback = self._validate_color(
+                font.color, expected_font.color, f"font color in {location}", slide_index
             )
-            violations.extend(color_violations)
+            feedback_items.extend(color_feedback)
         
-        return violations
+        return feedback_items
 
     def _validate_bullet_style(
         self, 
@@ -2376,7 +2378,7 @@ class SlideAssembler:
         expected_bullet: BulletInfo, 
         slide_index: int, 
         para_index: int
-    ) -> List[Dict[str, any]]:
+    ) -> List[ReviewFeedback]:
         """
         Validate bullet point style.
         
@@ -2417,7 +2419,7 @@ class SlideAssembler:
         expected_color_hex: str, 
         location: str, 
         slide_index: int
-    ) -> List[Dict[str, any]]:
+    ) -> List[ReviewFeedback]:
         """
         Validate color against expected color with tolerance.
         
