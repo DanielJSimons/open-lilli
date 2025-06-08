@@ -385,3 +385,35 @@ class TestSlidePlanner:
         assert planned.speaker_notes is not None
         # Should have generated image query for content slide
         assert planned.image_query is not None
+
+    def test_t90_bullet_truncate_replaced_with_slide_split(self):
+        """Test T-90: Replace Bullet-Truncate with Slide-Split."""
+        # Create slide with 7 bullets when limit is 5
+        slide = SlidePlan(
+            index=1,
+            slide_type="content",
+            title="Long Slide",
+            bullets=[f"Point {i}" for i in range(1, 8)]  # 7 bullets
+        )
+        
+        config = GenerationConfig(max_bullets_per_slide=5)
+        
+        # Plan individual slide - should mark for splitting, not truncate
+        planned = self.planner._plan_individual_slide(slide, config)
+        
+        # Verify all bullets are preserved (no truncation)
+        assert len(planned.bullets) == 7, "All bullets should be preserved"
+        
+        # Verify slide is marked for splitting
+        assert planned.needs_splitting is True, "Slide should be marked for splitting"
+        
+        # Now test the optimization sequence which should perform the split
+        outline = Outline(title="Test", slides=[planned])
+        final_slides = self.planner.plan_slides(outline, config)
+        
+        # Should result in split slides with zero content loss
+        total_bullets = sum(len(s.bullets) for s in final_slides)
+        assert total_bullets == 7, "Zero content loss - all bullets should be preserved after splitting"
+        
+        # Should have more than 1 slide after splitting
+        assert len(final_slides) > 1, "Should have split into multiple slides"

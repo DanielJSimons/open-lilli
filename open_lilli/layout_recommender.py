@@ -64,10 +64,11 @@ class LayoutRecommender:
         if not slide_id:
             slide_id = f"slide_{slide.index}_{int(time.time())}"
         
-        # Combine title and content for embedding
+        # Combine title and content for embedding (T-100: Support hierarchical bullets)
         content_text = slide.title
-        if slide.bullets:
-            content_text += ": " + ", ".join(slide.bullets)
+        bullet_texts = slide.get_bullet_texts()
+        if bullet_texts:
+            content_text += ": " + ", ".join(bullet_texts)
         
         # Create embedding using OpenAI
         try:
@@ -91,7 +92,7 @@ class LayoutRecommender:
             slide_type=slide.slide_type,
             layout_id=slide.layout_id or 1,
             embedding=embedding_vector,
-            bullet_count=len(slide.bullets),
+            bullet_count=len(slide.get_bullet_texts()),
             has_image=bool(slide.image_query),
             has_chart=bool(slide.chart_data),
             source_file=source_file,
@@ -331,7 +332,7 @@ class LayoutRecommender:
         if available_layouts and layout_type in available_layouts:
             return available_layouts[layout_type]
         
-        # Default mappings if no available_layouts provided
+        # Default mappings if no available_layouts provided (T-99 Extended)
         default_mappings = {
             "title": 0,
             "content": 1,
@@ -339,10 +340,308 @@ class LayoutRecommender:
             "image": 5,
             "chart": 1,
             "section": 2,
-            "blank": 6
+            "blank": 6,
+            "image_content": 4,
+            "content_dense": 7,
+            "three_column": 8,
+            "comparison": 9
         }
         
         return default_mappings.get(layout_type, 1)
+
+    def analyze_content_semantics(self, slide: SlidePlan) -> Dict[str, any]:
+        """
+        Analyze content semantics to extract layout-relevant features.
+        
+        This method identifies semantic patterns in slide content that help
+        determine the most appropriate layout. Features include comparison
+        patterns, list structures, visual cues, and content density.
+        
+        Args:
+            slide: SlidePlan to analyze for semantic features
+            
+        Returns:
+            Dictionary with semantic analysis results
+        """
+        analysis = {
+            "comparison_signals": False,
+            "list_structure": "simple",
+            "visual_requirements": [],
+            "content_density": "normal",
+            "hierarchical_content": False,
+            "process_flow": False,
+            "numeric_data": False,
+            "key_concepts": [],
+            "layout_hints": []
+        }
+        
+        # Combine all text content for analysis (T-100: Support hierarchical bullets)
+        all_text = slide.title.lower()
+        bullet_texts = slide.get_bullet_texts()
+        if bullet_texts:
+            all_text += " " + " ".join(bullet_texts).lower()
+        
+        # Check for comparison signals
+        comparison_keywords = [
+            "vs", "versus", "compared", "comparison", "against", "differences",
+            "pros and cons", "advantages", "disadvantages", "before after",
+            "old new", "current proposed", "option a", "option b"
+        ]
+        analysis["comparison_signals"] = any(keyword in all_text for keyword in comparison_keywords)
+        
+        # Analyze list structure complexity (T-100: Support hierarchical bullets)
+        if bullet_texts:
+            bullet_count = len(bullet_texts)
+            avg_bullet_length = sum(len(bullet) for bullet in bullet_texts) / bullet_count
+            
+            if bullet_count > 6:
+                analysis["list_structure"] = "dense"
+            elif bullet_count > 3 and avg_bullet_length > 50:
+                analysis["list_structure"] = "complex"
+            elif any(":" in bullet for bullet in bullet_texts):
+                analysis["list_structure"] = "structured"
+            
+            # Check for hierarchical content (nested concepts) - T-100: Support hierarchical bullets
+            hierarchical_keywords = ["including", "such as", "for example", "specifically", "namely"]
+            analysis["hierarchical_content"] = any(
+                keyword in bullet.lower() for bullet in bullet_texts 
+                for keyword in hierarchical_keywords
+            )
+            
+            # Detect actual hierarchy in bullet structure
+            if slide.bullet_hierarchy is not None:
+                max_level = max(bullet.level for bullet in slide.bullet_hierarchy)
+                if max_level > 0:
+                    analysis["hierarchical_content"] = True
+                    analysis["list_structure"] = "hierarchical"
+        
+        # Detect visual requirements
+        visual_keywords = {
+            "chart": ["chart", "graph", "data", "statistics", "metrics", "trends", "analysis"],
+            "image": ["image", "photo", "picture", "diagram", "illustration", "visual"],
+            "process": ["process", "workflow", "steps", "stages", "phases", "timeline"],
+            "table": ["table", "matrix", "grid", "spreadsheet", "data table"]
+        }
+        
+        for visual_type, keywords in visual_keywords.items():
+            if any(keyword in all_text for keyword in keywords):
+                analysis["visual_requirements"].append(visual_type)
+        
+        # Check for process flow indicators
+        process_indicators = ["step", "phase", "stage", "first", "then", "next", "finally", "process"]
+        analysis["process_flow"] = any(indicator in all_text for indicator in process_indicators)
+        
+        # Detect numeric data presence
+        import re
+        numbers_pattern = r'\b\d+(?:\.\d+)?(?:%|percent|million|billion|thousand)?\b'
+        analysis["numeric_data"] = bool(re.search(numbers_pattern, all_text))
+        
+        # Extract key concepts (important nouns/topics)
+        concept_keywords = [
+            "strategy", "market", "revenue", "growth", "customer", "product", 
+            "technology", "innovation", "performance", "analysis", "results",
+            "team", "project", "goal", "target", "opportunity", "challenge"
+        ]
+        analysis["key_concepts"] = [concept for concept in concept_keywords if concept in all_text]
+        
+        # Generate layout hints based on analysis
+        if analysis["comparison_signals"]:
+            analysis["layout_hints"].append("two_column")
+        if "chart" in analysis["visual_requirements"] or analysis["numeric_data"]:
+            analysis["layout_hints"].append("content")  # Standard content can handle charts
+        if analysis["list_structure"] == "dense":
+            analysis["layout_hints"].append("two_column")
+        if analysis["process_flow"]:
+            analysis["layout_hints"].append("blank")  # More flexibility for custom layouts
+        if analysis["hierarchical_content"]:
+            analysis["layout_hints"].append("content")
+        
+        # Determine content density (T-100: Support hierarchical bullets)
+        total_chars = len(slide.title) + sum(len(bullet) for bullet in bullet_texts)
+        if total_chars > 500:
+            analysis["content_density"] = "high"
+        elif total_chars < 200:
+            analysis["content_density"] = "low"
+        
+        logger.debug(f"Semantic analysis for '{slide.title}': {analysis}")
+        return analysis
+
+    def recommend_layout_with_llm(
+        self,
+        slide: SlidePlan,
+        available_layouts: Optional[Dict[str, int]] = None
+    ) -> LayoutRecommendation:
+        """
+        Recommend layout using LLM-based semantic analysis instead of ML similarity.
+        
+        Args:
+            slide: SlidePlan to recommend layout for
+            available_layouts: Dict mapping layout types to layout IDs
+            
+        Returns:
+            LayoutRecommendation with LLM-based confidence and reasoning
+        """
+        logger.debug(f"Getting LLM-based layout recommendation for: {slide.title}")
+        
+        # Get semantic analysis
+        semantic_analysis = self.analyze_content_semantics(slide)
+        
+        # Create LLM prompt for layout recommendation
+        prompt = self._create_layout_recommendation_prompt(slide, semantic_analysis, available_layouts)
+        
+        try:
+            response = self.client.chat.completions.create(
+                model="gpt-4o-mini",  # Use faster model for layout decisions
+                messages=[
+                    {
+                        "role": "system", 
+                        "content": "You are an expert presentation designer who selects optimal slide layouts based on content analysis. Provide structured JSON responses."
+                    },
+                    {
+                        "role": "user", 
+                        "content": prompt
+                    }
+                ],
+                temperature=0.1,  # Low temperature for consistent recommendations
+                max_tokens=500
+            )
+            
+            # Parse LLM response
+            llm_response = response.choices[0].message.content
+            recommendation_data = self._parse_llm_recommendation(llm_response, available_layouts)
+            
+            if recommendation_data:
+                return LayoutRecommendation(
+                    slide_type=recommendation_data["layout_type"],
+                    layout_id=recommendation_data["layout_id"],
+                    confidence=recommendation_data["confidence"],
+                    reasoning=recommendation_data["reasoning"],
+                    similar_slides=[],  # LLM doesn't use historical examples
+                    fallback_used=False
+                )
+                
+        except Exception as e:
+            logger.warning(f"LLM layout recommendation failed for slide {slide.index}: {e}")
+        
+        # Fallback to rule-based recommendation
+        return self._fallback_recommendation(slide, available_layouts)
+
+    def _create_layout_recommendation_prompt(
+        self,
+        slide: SlidePlan,
+        semantic_analysis: Dict[str, any],
+        available_layouts: Optional[Dict[str, int]] = None
+    ) -> str:
+        """
+        Create a structured prompt for LLM layout recommendation.
+        
+        Args:
+            slide: SlidePlan to create prompt for
+            semantic_analysis: Results from analyze_content_semantics
+            available_layouts: Available layout options
+            
+        Returns:
+            Formatted prompt string
+        """
+        # Get available layout types (T-99 Extended)
+        if available_layouts:
+            layout_options = list(available_layouts.keys())
+        else:
+            layout_options = [
+                "title", "content", "two_column", "image", "chart", "section", "blank",
+                "image_content", "content_dense", "three_column", "comparison"
+            ]
+        
+        prompt = f"""Analyze this slide content and recommend the best layout:
+
+SLIDE CONTENT:
+Title: "{slide.title}"
+Bullets: {len(slide.get_bullet_texts())} items
+Content: {slide.get_bullet_texts() if slide.get_bullet_texts() else "No bullet content"}
+
+SEMANTIC ANALYSIS:
+- Comparison signals: {semantic_analysis.get('comparison_signals', False)}
+- List structure: {semantic_analysis.get('list_structure', 'simple')}
+- Visual requirements: {semantic_analysis.get('visual_requirements', [])}
+- Content density: {semantic_analysis.get('content_density', 'normal')}
+- Hierarchical content: {semantic_analysis.get('hierarchical_content', False)}
+- Process flow: {semantic_analysis.get('process_flow', False)}
+- Numeric data: {semantic_analysis.get('numeric_data', False)}
+- Key concepts: {semantic_analysis.get('key_concepts', [])}
+
+AVAILABLE LAYOUTS: {', '.join(layout_options)}
+
+LAYOUT DESCRIPTIONS:
+- title: For presentation titles and section headers
+- content: Standard layout with title and bullet points area
+- two_column: Side-by-side content areas for comparisons
+- image: Layout optimized for visual content with text
+- chart: Layout designed for data visualization
+- section: Section divider with large title
+- blank: Maximum flexibility for custom arrangements
+- image_content: Hybrid layout combining images with content areas
+- content_dense: Optimized layout for high-density content with better spacing
+- three_column: Multi-column layout for maximum content organization
+- comparison: Specialized layout for side-by-side comparisons
+
+Please recommend the best layout and provide your response in this JSON format:
+{{
+    "layout_type": "recommended_layout_name",
+    "confidence": 0.85,
+    "reasoning": "Detailed explanation of why this layout works best for this content",
+    "alternative_options": ["layout2", "layout3"]
+}}
+
+Focus on matching content characteristics to layout strengths. Consider content density, visual needs, and semantic patterns."""
+        
+        return prompt
+
+    def _parse_llm_recommendation(
+        self,
+        llm_response: str,
+        available_layouts: Optional[Dict[str, int]] = None
+    ) -> Optional[Dict[str, any]]:
+        """
+        Parse LLM response into structured recommendation data.
+        
+        Args:
+            llm_response: Raw response from LLM
+            available_layouts: Available layout mappings
+            
+        Returns:
+            Parsed recommendation data or None if parsing fails
+        """
+        try:
+            # Extract JSON from response
+            import re
+            json_match = re.search(r'\{.*\}', llm_response, re.DOTALL)
+            if not json_match:
+                logger.warning("No JSON found in LLM response")
+                return None
+            
+            recommendation_json = json.loads(json_match.group())
+            
+            layout_type = recommendation_json.get("layout_type")
+            confidence = recommendation_json.get("confidence", 0.5)
+            reasoning = recommendation_json.get("reasoning", "LLM recommendation")
+            
+            if not layout_type:
+                logger.warning("No layout_type in LLM recommendation")
+                return None
+            
+            # Get layout ID
+            layout_id = self._get_layout_id(layout_type, available_layouts)
+            
+            return {
+                "layout_type": layout_type,
+                "layout_id": layout_id,
+                "confidence": min(max(confidence, 0.0), 1.0),  # Clamp to [0,1]
+                "reasoning": f"LLM Analysis: {reasoning}"
+            }
+            
+        except (json.JSONDecodeError, KeyError) as e:
+            logger.warning(f"Failed to parse LLM recommendation: {e}")
+            return None
 
     def _generate_reasoning(
         self, 
@@ -428,8 +727,8 @@ class LayoutRecommender:
             layout_type = "title"
             reasoning += "title slide type"
         
-        # Check bullet density
-        elif slide.bullets and len(slide.bullets) > 5:
+        # Check bullet density (T-100: Support hierarchical bullets)
+        elif slide.get_bullet_texts() and len(slide.get_bullet_texts()) > 5:
             layout_type = "content"
             reasoning += "high content density"
         

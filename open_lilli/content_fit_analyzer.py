@@ -53,15 +53,16 @@ class ContentFitAnalyzer:
         Returns:
             ContentDensityAnalysis with density metrics
         """
-        # Calculate total content length
+        # Calculate total content length (T-100: Support hierarchical bullets)
         total_chars = len(slide.title)
-        for bullet in slide.bullets:
+        bullet_texts = slide.get_bullet_texts()
+        for bullet in bullet_texts:
             total_chars += len(bullet)
         
-        # Estimate lines needed based on content
+        # Estimate lines needed based on content (T-100: Support hierarchical bullets)
         title_lines = self._estimate_text_lines(slide.title)
-        bullet_lines = sum(self._estimate_text_lines(bullet) for bullet in slide.bullets)
-        total_lines = title_lines + bullet_lines + len(slide.bullets)  # Add line breaks
+        bullet_lines = sum(self._estimate_text_lines(bullet) for bullet in bullet_texts)
+        total_lines = title_lines + bullet_lines + len(bullet_texts)  # Add line breaks
         
         # Estimate placeholder capacity
         placeholder_capacity = self._estimate_placeholder_capacity(slide, template_style)
@@ -191,7 +192,7 @@ class ContentFitAnalyzer:
         target_density: float = 0.8
     ) -> List[SlidePlan]:
         """
-        Split slide content into multiple slides.
+        Split slide content into multiple slides (T-100: Support hierarchical bullets).
         
         Args:
             slide: SlidePlan to split
@@ -200,25 +201,38 @@ class ContentFitAnalyzer:
         Returns:
             List of split slide plans
         """
-        if not slide.bullets:
+        bullet_texts = slide.get_bullet_texts()
+        if not bullet_texts:
             # Can't split a slide with no bullets
             return [slide]
         
         # Calculate optimal split based on content length
-        total_content_length = sum(len(bullet) for bullet in slide.bullets)
+        total_content_length = sum(len(bullet) for bullet in bullet_texts)
         target_capacity = int(self.config.characters_per_line * self.config.lines_per_placeholder * target_density)
         
         # Determine number of slides needed
         num_slides = max(2, (total_content_length // target_capacity) + 1)
-        bullets_per_slide = max(1, len(slide.bullets) // num_slides)
+        bullets_per_slide = max(1, len(bullet_texts) // num_slides)
         
         split_slides = []
-        bullet_chunks = self._chunk_bullets(slide.bullets, bullets_per_slide)
+        
+        # For hierarchical bullets, preserve structure when splitting
+        if slide.bullet_hierarchy is not None:
+            bullet_chunks = self._chunk_hierarchical_bullets(slide.bullet_hierarchy, bullets_per_slide)
+        else:
+            bullet_chunks = self._chunk_bullets(bullet_texts, bullets_per_slide)
         
         for i, bullet_chunk in enumerate(bullet_chunks):
             split_slide = slide.model_copy()
             split_slide.index = slide.index + i
-            split_slide.bullets = bullet_chunk
+            
+            # Update bullets based on type
+            if slide.bullet_hierarchy is not None:
+                split_slide.bullet_hierarchy = bullet_chunk
+                split_slide.bullets = []  # Clear legacy bullets
+            else:
+                split_slide.bullets = bullet_chunk
+                split_slide.bullet_hierarchy = None
             
             # Modify title to indicate part
             if len(bullet_chunks) > 1:
@@ -506,8 +520,9 @@ REQUIREMENTS:
         if slide.title:
             lines_available -= 1  # Account for title space
         
-        # Adjust for bullet count (each bullet has overhead)
-        if slide.bullets:
+        # Adjust for bullet count (each bullet has overhead) - T-100: Support hierarchical bullets
+        bullet_texts = slide.get_bullet_texts()
+        if bullet_texts:
             # Account for bullet characters and spacing
             bullet_overhead_per_line = 4  # "• " plus some spacing
             chars_per_line -= bullet_overhead_per_line
@@ -535,8 +550,9 @@ REQUIREMENTS:
         if density_ratio <= 1.0:
             return "no_action"
 
-        # If content is primarily title or non-bullet, rewrite might not be suitable.
-        can_rewrite = bool(slide.bullets) # Simple check, can be more sophisticated
+        # If content is primarily title or non-bullet, rewrite might not be suitable. (T-100)
+        bullet_texts = slide.get_bullet_texts()
+        can_rewrite = bool(bullet_texts) # Simple check, can be more sophisticated
 
         if density_ratio <= self.config.font_tune_threshold:
             # Very mild overflow, could be acceptable or tiny font adjustment
@@ -578,6 +594,47 @@ REQUIREMENTS:
             chunks.append(chunk)
         
         return chunks
+    
+    def _chunk_hierarchical_bullets(self, bullet_items: List['BulletItem'], target_size: int) -> List[List['BulletItem']]:
+        """
+        Split hierarchical bullets into chunks while preserving structure (T-100).
+        
+        Args:
+            bullet_items: List of BulletItem objects with hierarchy
+            target_size: Target number of bullets per chunk
+            
+        Returns:
+            List of hierarchical bullet chunks
+        """
+        if target_size >= len(bullet_items):
+            return [bullet_items]
+        
+        chunks = []
+        i = 0
+        
+        while i < len(bullet_items):
+            chunk = []
+            chunk_size = 0
+            
+            while chunk_size < target_size and i < len(bullet_items):
+                current_bullet = bullet_items[i]
+                chunk.append(current_bullet)
+                chunk_size += 1
+                i += 1
+                
+                # If this is a top-level bullet (level 0), include any immediate sub-bullets
+                if current_bullet.level == 0:
+                    while (i < len(bullet_items) and 
+                           bullet_items[i].level > 0 and 
+                           chunk_size < target_size * 1.5):  # Allow some overflow for sub-bullets
+                        chunk.append(bullet_items[i])
+                        chunk_size += 1
+                        i += 1
+            
+            if chunk:
+                chunks.append(chunk)
+        
+        return chunks
 
     def get_optimization_summary(
         self,
@@ -610,3 +667,332 @@ REQUIREMENTS:
             "action_breakdown": action_counts,
             "optimization_rate": slides_requiring_action / total_slides if total_slides > 0 else 0
         }
+
+
+class SmartContentFitter:
+    """Smart content fitting with advanced bullet redistribution capabilities."""
+    
+    def __init__(self, content_fit_analyzer: ContentFitAnalyzer):
+        """
+        Initialize SmartContentFitter.
+        
+        Args:
+            content_fit_analyzer: ContentFitAnalyzer instance for density analysis
+        """
+        self.analyzer = content_fit_analyzer
+        logger.info("SmartContentFitter initialized")
+    
+    def rebalance(
+        self, 
+        slides: List[SlidePlan],
+        template_style: Optional[TemplateStyle] = None
+    ) -> List[SlidePlan]:
+        """
+        Redistribute bullets across adjacent slides to achieve optimal density.
+        
+        This method attempts to balance content across slides by moving bullets
+        from overflowing slides to adjacent slides with capacity, before resorting
+        to font shrinking or slide splitting.
+        
+        Args:
+            slides: List of slides to rebalance
+            template_style: Optional template style for density analysis
+            
+        Returns:
+            List of rebalanced slides with improved density ratios
+        """
+        if len(slides) < 2:
+            logger.debug("Rebalancing skipped: Less than 2 slides")
+            return slides
+        
+        logger.info(f"Starting bullet rebalancing across {len(slides)} slides")
+        
+        # Make a copy to avoid modifying original slides
+        rebalanced_slides = [slide.model_copy() for slide in slides]
+        
+        # Track rebalancing statistics
+        moves_made = 0
+        slides_improved = 0
+        
+        # Multi-pass rebalancing for convergence
+        for pass_num in range(3):  # Maximum 3 passes
+            pass_moves = 0
+            
+            # Forward pass: redistribute from left to right
+            for i in range(len(rebalanced_slides) - 1):
+                moves = self._redistribute_between_slides(
+                    rebalanced_slides[i], 
+                    rebalanced_slides[i + 1], 
+                    template_style, 
+                    direction="forward"
+                )
+                pass_moves += moves
+            
+            # Backward pass: redistribute from right to left
+            for i in range(len(rebalanced_slides) - 1, 0, -1):
+                moves = self._redistribute_between_slides(
+                    rebalanced_slides[i], 
+                    rebalanced_slides[i - 1], 
+                    template_style, 
+                    direction="backward"
+                )
+                pass_moves += moves
+            
+            moves_made += pass_moves
+            
+            # Stop if no improvements made in this pass
+            if pass_moves == 0:
+                logger.debug(f"Rebalancing converged after {pass_num + 1} passes")
+                break
+        
+        # Count slides with improved density ratios
+        for orig, rebal in zip(slides, rebalanced_slides):
+            orig_density = self.analyzer.analyze_slide_density(orig, template_style).density_ratio
+            rebal_density = self.analyzer.analyze_slide_density(rebal, template_style).density_ratio
+            if rebal_density <= 1.0 and orig_density > 1.0:
+                slides_improved += 1
+        
+        logger.info(f"Rebalancing complete: {moves_made} bullet moves, {slides_improved} slides improved to ≤ 1.0 density ratio")
+        
+        return rebalanced_slides
+    
+    def _redistribute_between_slides(
+        self,
+        source_slide: SlidePlan,
+        target_slide: SlidePlan,
+        template_style: Optional[TemplateStyle],
+        direction: str = "forward"
+    ) -> int:
+        """
+        Redistribute bullets between two adjacent slides.
+        
+        Args:
+            source_slide: Slide that may have bullets moved from it
+            target_slide: Slide that may receive bullets
+            template_style: Template style for density calculations
+            direction: "forward" or "backward" for logging context
+            
+        Returns:
+            Number of bullets moved
+        """
+        # Only redistribute if source is overflowing and target has capacity
+        source_analysis = self.analyzer.analyze_slide_density(source_slide, template_style)
+        target_analysis = self.analyzer.analyze_slide_density(target_slide, template_style)
+        
+        # Skip if source doesn't need help or target is already full
+        if not source_analysis.requires_action or target_analysis.density_ratio >= 1.0:
+            return 0
+        
+        # Skip if source has no bullets to move
+        if not source_slide.bullets:
+            return 0
+        
+        bullets_moved = 0
+        max_moves = min(len(source_slide.bullets), 3)  # Limit moves per pass
+        
+        # Try moving bullets one by one
+        for _ in range(max_moves):
+            # Calculate if moving one bullet would help
+            if not source_slide.bullets:
+                break
+                
+            # Create test scenarios
+            test_source = source_slide.model_copy()
+            test_target = target_slide.model_copy()
+            
+            # Move the last bullet (usually least critical)
+            bullet_to_move = test_source.bullets.pop()
+            test_target.bullets.append(bullet_to_move)
+            
+            # Analyze new densities
+            new_source_analysis = self.analyzer.analyze_slide_density(test_source, template_style)
+            new_target_analysis = self.analyzer.analyze_slide_density(test_target, template_style)
+            
+            # Accept move if it improves overall situation
+            source_improvement = source_analysis.density_ratio - new_source_analysis.density_ratio
+            target_degradation = new_target_analysis.density_ratio - target_analysis.density_ratio
+            
+            # Move is beneficial if:
+            # 1. Source improvement is significant (> 0.1)
+            # 2. Target doesn't overflow (density <= 1.0)
+            # 3. Net improvement is positive
+            if (source_improvement > 0.1 and 
+                new_target_analysis.density_ratio <= 1.0 and
+                source_improvement > target_degradation):
+                
+                # Apply the move to actual slides
+                moved_bullet = source_slide.bullets.pop()
+                target_slide.bullets.append(moved_bullet)
+                bullets_moved += 1
+                
+                # Update analysis for next iteration
+                source_analysis = new_source_analysis
+                target_analysis = new_target_analysis
+                
+                logger.debug(f"Moved bullet '{moved_bullet[:30]}...' from slide {source_slide.index} to {target_slide.index} ({direction})")
+            else:
+                # Move not beneficial, stop trying
+                break
+        
+        return bullets_moved
+
+    def dynamic_layout_upgrading(
+        self,
+        slide: SlidePlan,
+        template_parser,
+        template_style: Optional[TemplateStyle] = None
+    ) -> Optional[SlidePlan]:
+        """
+        Dynamically upgrade slide layout to one with higher capacity when content overflows.
+        
+        This method analyzes the current slide's layout and attempts to find a better
+        layout that can accommodate more content, avoiding the need for font reduction
+        or slide splitting.
+        
+        Args:
+            slide: SlidePlan to potentially upgrade
+            template_parser: TemplateParser for layout information
+            template_style: Optional template style information
+            
+        Returns:
+            SlidePlan with upgraded layout or None if no better layout found
+        """
+        # Get current layout information
+        current_layout_id = slide.layout_id
+        if current_layout_id is None:
+            logger.debug(f"Slide {slide.index} has no layout ID, cannot upgrade")
+            return None
+        
+        current_layout_type = template_parser.get_layout_type_by_id(current_layout_id)
+        if not current_layout_type:
+            logger.debug(f"Slide {slide.index} has unknown layout type, cannot upgrade")
+            return None
+        
+        # Analyze current density
+        current_density = self.analyzer.analyze_slide_density(slide, template_style)
+        if not current_density.requires_action:
+            logger.debug(f"Slide {slide.index} doesn't require action, no upgrade needed")
+            return None
+        
+        # Define layout upgrade hierarchy (from lower to higher capacity) - T-99 Extended
+        layout_hierarchy = {
+            "content": ["two_column", "content_dense", "blank"],
+            "image": ["image_content", "two_column", "content_dense", "blank"],
+            "image_content": ["two_column", "content_dense", "blank"],
+            "chart": ["image_content", "two_column", "content_dense", "blank"],
+            "title": ["section", "content", "two_column", "blank"],
+            "section": ["content", "two_column", "content_dense", "blank"],
+            "two_column": ["content_dense", "three_column", "blank"],
+            "comparison": ["two_column", "content_dense", "blank"],
+            "three_column": ["content_dense", "blank"],
+            "content_dense": ["blank"]
+        }
+        
+        # Get possible upgrades for current layout type
+        possible_upgrades = layout_hierarchy.get(current_layout_type, [])
+        if not possible_upgrades:
+            logger.debug(f"No upgrade path defined for layout type '{current_layout_type}'")
+            return None
+        
+        # Try each upgrade option in order
+        for upgrade_layout_type in possible_upgrades:
+            try:
+                upgrade_layout_id = template_parser.get_layout_index(upgrade_layout_type)
+                if upgrade_layout_id is None or upgrade_layout_id == current_layout_id:
+                    continue
+                
+                # Create test slide with upgraded layout
+                test_slide = slide.model_copy()
+                test_slide.layout_id = upgrade_layout_id
+                
+                # Analyze density with new layout
+                # Note: This is an approximation since different layouts may have different capacities
+                upgrade_capacity_factor = self._get_layout_capacity_factor(upgrade_layout_type)
+                test_density = self._analyze_density_with_capacity_factor(
+                    test_slide, template_style, upgrade_capacity_factor
+                )
+                
+                # Check if upgrade resolves overflow
+                if not test_density.requires_action:
+                    logger.info(f"Slide {slide.index}: Dynamic layout upgrade from '{current_layout_type}' "
+                              f"to '{upgrade_layout_type}' resolves overflow "
+                              f"(density: {current_density.density_ratio:.2f} → {test_density.density_ratio:.2f})")
+                    return test_slide
+                    
+                # Check if significant improvement even if not fully resolved
+                improvement = current_density.density_ratio - test_density.density_ratio
+                if improvement > 0.2:  # Significant improvement threshold
+                    logger.info(f"Slide {slide.index}: Dynamic layout upgrade from '{current_layout_type}' "
+                              f"to '{upgrade_layout_type}' provides significant improvement "
+                              f"(density: {current_density.density_ratio:.2f} → {test_density.density_ratio:.2f})")
+                    return test_slide
+                
+            except (ValueError, AttributeError) as e:
+                logger.debug(f"Failed to test upgrade to '{upgrade_layout_type}': {e}")
+                continue
+        
+        logger.debug(f"Slide {slide.index}: No beneficial layout upgrade found")
+        return None
+    
+    def _get_layout_capacity_factor(self, layout_type: str) -> float:
+        """
+        Get capacity factor for different layout types.
+        
+        Args:
+            layout_type: Type of layout
+            
+        Returns:
+            Capacity factor (1.0 = standard, > 1.0 = higher capacity)
+        """
+        capacity_factors = {
+            "title": 0.6,          # Less content capacity
+            "section": 0.8,        # Limited content capacity
+            "content": 1.0,        # Standard content capacity
+            "image": 0.7,          # Reduced due to image space
+            "chart": 0.7,          # Reduced due to chart space
+            "image_content": 0.8,  # Mixed layout with moderate capacity
+            "two_column": 1.4,     # Higher capacity with two columns
+            "content_dense": 1.6,  # Dense content layout with optimized spacing
+            "three_column": 1.7,   # Three column layout for maximum content
+            "comparison": 1.3,     # Comparison layout with dual content areas
+            "blank": 1.8           # Maximum flexibility
+        }
+        
+        return capacity_factors.get(layout_type, 1.0)
+    
+    def _analyze_density_with_capacity_factor(
+        self,
+        slide: SlidePlan,
+        template_style: Optional[TemplateStyle],
+        capacity_factor: float
+    ) -> ContentDensityAnalysis:
+        """
+        Analyze slide density with a capacity adjustment factor.
+        
+        Args:
+            slide: SlidePlan to analyze
+            template_style: Optional template style information
+            capacity_factor: Factor to adjust estimated capacity
+            
+        Returns:
+            ContentDensityAnalysis with adjusted capacity
+        """
+        # Get standard analysis
+        standard_analysis = self.analyzer.analyze_slide_density(slide, template_style)
+        
+        # Adjust capacity and recalculate density ratio
+        adjusted_capacity = int(standard_analysis.placeholder_capacity * capacity_factor)
+        adjusted_density_ratio = standard_analysis.total_characters / max(adjusted_capacity, 1)
+        
+        # Determine new recommended action
+        adjusted_requires_action = adjusted_density_ratio > 1.0
+        adjusted_recommended_action = self.analyzer._determine_action(adjusted_density_ratio, slide)
+        
+        return ContentDensityAnalysis(
+            total_characters=standard_analysis.total_characters,
+            estimated_lines=standard_analysis.estimated_lines,
+            placeholder_capacity=adjusted_capacity,
+            density_ratio=adjusted_density_ratio,
+            requires_action=adjusted_requires_action,
+            recommended_action=adjusted_recommended_action
+        )

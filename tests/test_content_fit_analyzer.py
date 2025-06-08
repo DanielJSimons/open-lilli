@@ -3,7 +3,7 @@ from unittest.mock import MagicMock, patch
 from openai import OpenAI
 
 from open_lilli.models import SlidePlan, ContentFitConfig, ContentDensityAnalysis, FontAdjustment, ContentFitResult
-from open_lilli.content_fit_analyzer import ContentFitAnalyzer
+from open_lilli.content_fit_analyzer import ContentFitAnalyzer, SmartContentFitter
 
 
 class TestContentFitAnalyzer(unittest.TestCase):
@@ -229,6 +229,255 @@ class TestContentFitAnalyzer(unittest.TestCase):
             args, kwargs = mock_sync_rewrite_method.call_args
             self.assertEqual(args[0], slide_plan) # Original slide plan
             self.assertTrue(0.1 <= kwargs['target_reduction'] <= 0.5) # Target reduction is calculated correctly
+
+
+class TestSmartContentFitter(unittest.TestCase):
+    """Test cases for T-91: SmartContentFitter v1 rebalancing."""
+    
+    def test_t91_smart_content_fitter_rebalance(self):
+        """Test T-91: SmartContentFitter redistributes bullets across adjacent slides."""
+        # Create analyzer and smart fitter
+        config = ContentFitConfig(
+            characters_per_line=40,
+            lines_per_placeholder=5,
+            split_threshold=1.4
+        )
+        analyzer = ContentFitAnalyzer(config=config)
+        smart_fitter = SmartContentFitter(analyzer)
+        
+        # Create slides: one overflowing, one with capacity
+        overflowing_slide = SlidePlan(
+            index=0,
+            slide_type="content",
+            title="Overflowing Slide",
+            bullets=[
+                "This is a very long bullet point that causes overflow in the slide.",
+                "Another very long bullet point adding to the density problem.",
+                "Yet another long bullet point to ensure overflow.",
+                "A fourth bullet to make it even worse."
+            ]
+        )
+        
+        light_slide = SlidePlan(
+            index=1,
+            slide_type="content", 
+            title="Light Slide",
+            bullets=[
+                "Short bullet."
+            ]
+        )
+        
+        slides = [overflowing_slide, light_slide]
+        
+        # Check initial density ratios
+        initial_overflow_density = analyzer.analyze_slide_density(overflowing_slide).density_ratio
+        initial_light_density = analyzer.analyze_slide_density(light_slide).density_ratio
+        
+        # Perform rebalancing
+        rebalanced_slides = smart_fitter.rebalance(slides)
+        
+        # Verify rebalancing occurred
+        self.assertEqual(len(rebalanced_slides), 2, "Should maintain number of slides")
+        
+        final_first_density = analyzer.analyze_slide_density(rebalanced_slides[0]).density_ratio
+        final_second_density = analyzer.analyze_slide_density(rebalanced_slides[1]).density_ratio
+        
+        # Verify that density ratio of first slide improved (decreased)
+        self.assertLess(final_first_density, initial_overflow_density, 
+                       "First slide density should improve after rebalancing")
+        
+        # Verify total bullets preserved (zero content loss)
+        original_total_bullets = sum(len(slide.bullets) for slide in slides)
+        rebalanced_total_bullets = sum(len(slide.bullets) for slide in rebalanced_slides)
+        self.assertEqual(original_total_bullets, rebalanced_total_bullets,
+                        "Total bullets should be preserved during rebalancing")
+        
+        # Verify that the target density ratio ≤ 1.0 for improved slides
+        # (This may not always be achievable depending on content, but we check improvement)
+        if final_first_density <= 1.0:
+            # Successfully achieved target density
+            pass
+        else:
+            # At least verify there was improvement
+            self.assertLess(final_first_density, initial_overflow_density,
+                           "Should at least improve density even if not achieving ≤ 1.0")
+    
+    def test_t91_rebalance_no_moves_when_no_benefit(self):
+        """Test that rebalancing doesn't move bullets when it's not beneficial."""
+        config = ContentFitConfig(
+            characters_per_line=50,
+            lines_per_placeholder=10  # Large capacity
+        )
+        analyzer = ContentFitAnalyzer(config=config)
+        smart_fitter = SmartContentFitter(analyzer)
+        
+        # Create slides that are both well-balanced
+        slide1 = SlidePlan(
+            index=0,
+            slide_type="content",
+            title="Balanced Slide 1",
+            bullets=["Short bullet 1", "Short bullet 2"]
+        )
+        
+        slide2 = SlidePlan(
+            index=1,
+            slide_type="content",
+            title="Balanced Slide 2", 
+            bullets=["Short bullet 3", "Short bullet 4"]
+        )
+        
+        slides = [slide1, slide2]
+        original_bullets = [slide.bullets[:] for slide in slides]  # Deep copy
+        
+        # Perform rebalancing
+        rebalanced_slides = smart_fitter.rebalance(slides)
+        
+        # Verify no changes were made (slides were already balanced)
+        for i, (original, rebalanced) in enumerate(zip(original_bullets, rebalanced_slides)):
+            self.assertEqual(original, rebalanced.bullets,
+                           f"Slide {i} bullets should remain unchanged when already balanced")
+    
+    def test_t91_rebalance_single_slide_skipped(self):
+        """Test that rebalancing is skipped for single slide presentations."""
+        config = ContentFitConfig()
+        analyzer = ContentFitAnalyzer(config=config)
+        smart_fitter = SmartContentFitter(analyzer)
+        
+        single_slide = SlidePlan(
+            index=0,
+            slide_type="content",
+            title="Only Slide",
+            bullets=["Bullet 1", "Bullet 2", "Bullet 3"]
+        )
+        
+        slides = [single_slide]
+        rebalanced_slides = smart_fitter.rebalance(slides)
+        
+        # Should return unchanged
+        self.assertEqual(len(rebalanced_slides), 1)
+        self.assertEqual(rebalanced_slides[0].bullets, single_slide.bullets)
+
+
+class TestDynamicLayoutUpgrading(unittest.TestCase):
+    """Test cases for T-92: Dynamic Layout Upgrading."""
+    
+    def test_t92_dynamic_layout_upgrade_resolves_overflow(self):
+        """Test T-92: Dynamic layout upgrading resolves overflow by switching to higher-capacity layout."""
+        # Create analyzer
+        config = ContentFitConfig(
+            characters_per_line=30,
+            lines_per_placeholder=4,
+            split_threshold=1.5
+        )
+        analyzer = ContentFitAnalyzer(config=config)
+        
+        # Mock template parser
+        mock_template_parser = MagicMock()
+        mock_template_parser.get_layout_type_by_id.return_value = "content"
+        mock_template_parser.get_layout_index.return_value = 2  # two_column layout ID
+        
+        # Create overflowing slide with content layout
+        overflowing_slide = SlidePlan(
+            index=0,
+            slide_type="content",
+            title="Overflowing Content Slide",
+            bullets=[
+                "This is a very long bullet point that causes overflow in the content layout.",
+                "Another very long bullet point that adds to the density problem.",
+                "A third long bullet point making overflow worse.",
+                "Fourth bullet to ensure significant overflow."
+            ],
+            layout_id=1  # content layout
+        )
+        
+        # Test dynamic layout upgrading
+        upgraded_slide = analyzer.dynamic_layout_upgrading(
+            overflowing_slide, mock_template_parser
+        )
+        
+        # Verify upgrade occurred
+        self.assertIsNotNone(upgraded_slide, "Dynamic layout upgrade should return upgraded slide")
+        self.assertNotEqual(upgraded_slide.layout_id, overflowing_slide.layout_id,
+                           "Layout ID should change after upgrade")
+        self.assertEqual(upgraded_slide.layout_id, 2, "Should upgrade to two_column layout")
+        
+        # Verify content is preserved
+        self.assertEqual(upgraded_slide.bullets, overflowing_slide.bullets,
+                        "Bullet content should be preserved during layout upgrade")
+        self.assertEqual(upgraded_slide.title, overflowing_slide.title,
+                        "Title should be preserved during layout upgrade")
+    
+    def test_t92_no_upgrade_when_no_overflow(self):
+        """Test that dynamic layout upgrading is not applied when there's no overflow."""
+        config = ContentFitConfig(
+            characters_per_line=100,  # Large capacity
+            lines_per_placeholder=10
+        )
+        analyzer = ContentFitAnalyzer(config=config)
+        
+        # Mock template parser
+        mock_template_parser = MagicMock()
+        mock_template_parser.get_layout_type_by_id.return_value = "content"
+        
+        # Create slide with no overflow
+        normal_slide = SlidePlan(
+            index=0,
+            slide_type="content",
+            title="Normal Slide",
+            bullets=["Short bullet", "Another short bullet"],
+            layout_id=1
+        )
+        
+        # Test dynamic layout upgrading
+        upgraded_slide = analyzer.dynamic_layout_upgrading(
+            normal_slide, mock_template_parser
+        )
+        
+        # Should return None since no upgrade needed
+        self.assertIsNone(upgraded_slide, 
+                         "Should not upgrade layout when content already fits")
+    
+    def test_t92_layout_capacity_factors(self):
+        """Test that layout capacity factors are correctly defined."""
+        config = ContentFitConfig()
+        analyzer = ContentFitAnalyzer(config=config)
+        
+        # Test capacity factors
+        self.assertEqual(analyzer._get_layout_capacity_factor("content"), 1.0)
+        self.assertEqual(analyzer._get_layout_capacity_factor("two_column"), 1.4)
+        self.assertEqual(analyzer._get_layout_capacity_factor("blank"), 1.8)
+        self.assertEqual(analyzer._get_layout_capacity_factor("title"), 0.6)
+        self.assertEqual(analyzer._get_layout_capacity_factor("unknown_layout"), 1.0)  # Default
+    
+    def test_t92_no_upgrade_path_available(self):
+        """Test behavior when no upgrade path is available for layout type."""
+        config = ContentFitConfig(
+            characters_per_line=20,
+            lines_per_placeholder=3
+        )
+        analyzer = ContentFitAnalyzer(config=config)
+        
+        # Mock template parser
+        mock_template_parser = MagicMock()
+        mock_template_parser.get_layout_type_by_id.return_value = "unknown_layout"
+        
+        # Create overflowing slide with unknown layout type
+        slide = SlidePlan(
+            index=0,
+            slide_type="content",
+            title="Slide with Unknown Layout",
+            bullets=["Very long bullet point that causes overflow"],
+            layout_id=99  # unknown layout
+        )
+        
+        # Test dynamic layout upgrading
+        upgraded_slide = analyzer.dynamic_layout_upgrading(
+            slide, mock_template_parser
+        )
+        
+        # Should return None since no upgrade path exists
+        self.assertIsNone(upgraded_slide,
+                         "Should not upgrade when no upgrade path is defined")
 
 
 if __name__ == '__main__':

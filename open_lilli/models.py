@@ -8,6 +8,23 @@ from enum import Enum
 from pydantic import BaseModel, Field
 
 
+class BulletItem(BaseModel):
+    """Represents a bullet point with hierarchical level support."""
+    
+    text: str = Field(..., description="Text content of the bullet point")
+    level: int = Field(default=0, description="Indentation level (0=top level, 1=sub-bullet, etc.)")
+    
+    class Config:
+        """Pydantic configuration."""
+        
+        json_schema_extra = {
+            "example": {
+                "text": "Main bullet point",
+                "level": 0
+            }
+        }
+
+
 class SlidePlan(BaseModel):
     """Represents a planned slide with content and layout information."""
 
@@ -18,7 +35,10 @@ class SlidePlan(BaseModel):
     )
     title: str = Field(..., description="Main title of the slide")
     bullets: List[str] = Field(
-        default_factory=list, description="List of bullet points for the slide"
+        default_factory=list, description="List of bullet points for the slide (legacy format)"
+    )
+    bullet_hierarchy: Optional[List[BulletItem]] = Field(
+        None, description="Hierarchical bullet structure with levels (T-100)"
     )
     image_query: Optional[str] = Field(
         None, description="Search query for finding relevant images"
@@ -35,6 +55,34 @@ class SlidePlan(BaseModel):
     summarized_by_llm: bool = Field(
         default=False, description="Indicates if the slide content was summarized by an LLM"
     )
+    needs_splitting: bool = Field(
+        default=False, description="Indicates if the slide needs to be split due to excessive content"
+    )
+
+    def get_effective_bullets(self) -> List[BulletItem]:
+        """
+        Get the effective bullet structure, converting legacy bullets if needed.
+        
+        Returns:
+            List of BulletItem objects with hierarchy information
+        """
+        if self.bullet_hierarchy is not None:
+            return self.bullet_hierarchy
+        
+        # Convert legacy bullets to BulletItem format
+        return [BulletItem(text=bullet, level=0) for bullet in self.bullets]
+    
+    def get_bullet_texts(self) -> List[str]:
+        """
+        Get bullet text content as flat list for backward compatibility.
+        
+        Returns:
+            List of bullet text strings
+        """
+        if self.bullet_hierarchy is not None:
+            return [bullet.text for bullet in self.bullet_hierarchy]
+        
+        return self.bullets
 
     class Config:
         """Pydantic configuration."""

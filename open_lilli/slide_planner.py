@@ -5,7 +5,7 @@ from typing import Dict, List, Optional
 
 from openai import OpenAI
 
-from .content_fit_analyzer import ContentFitAnalyzer
+from .content_fit_analyzer import ContentFitAnalyzer, SmartContentFitter
 from .layout_recommender import LayoutRecommender
 from .models import (
     ContentFitConfig, 
@@ -55,11 +55,22 @@ class SlidePlanner:
         # Initialize content fit analyzer
         self.content_fit_analyzer = ContentFitAnalyzer(content_fit_config, openai_client)
         
-        # Define layout up-shift hierarchy
+        # Initialize smart content fitter for rebalancing
+        self.smart_fitter = SmartContentFitter(self.content_fit_analyzer)
+        
+        # Define layout up-shift hierarchy (T-99: Extended Layout Upshift Map)
         self.layout_upshift_map = {
-            "content": "two_column",  # If 'content' overflows, try 'two_column'
-            # Example: "image_content": "two_column_image_text"
-            # (Actual names depend on your _classify_layout logic and template)
+            "content": "two_column",           # Standard content → two column for better spacing
+            "image": "image_content",          # Image-only → image+content hybrid
+            "image_content": "two_column",     # Image+content → two column for more space  
+            "two_column": "content_dense",     # Two column → dense content layout if available
+            "chart": "image_content",          # Chart → image+content for additional context
+            "title": "section",                # Title → section header for more emphasis
+            "section": "content",              # Section → content for additional details
+            # Custom dense layouts (if template provides them)
+            "content_dense": "blank",          # Dense content → blank for maximum flexibility
+            "three_column": "content_dense",   # Three column → dense content
+            "comparison": "two_column",        # Comparison → two column as fallback
         }
 
         logger.info(f"SlidePlanner initialized with {len(self.template_parser.layout_map)} available layouts. Upshift map: {self.layout_upshift_map}")
@@ -73,12 +84,15 @@ class SlidePlanner:
         """
         return {
             "title": ["title", "section", "content"],
-            "content": ["content", "title", "blank"],
+            "content": ["content", "content_dense", "two_column", "blank"],
             "image": ["image", "image_content", "content", "blank"],
-            "chart": ["content", "image_content", "blank"],
-            "two_column": ["two_column", "content", "blank"],
+            "chart": ["content", "image_content", "content_dense", "blank"],
+            "two_column": ["two_column", "content_dense", "content", "blank"],
             "section": ["section", "title", "content"],
-            "blank": ["blank", "content"]
+            "blank": ["blank", "content"],
+            "comparison": ["comparison", "two_column", "content", "blank"],
+            "content_dense": ["content_dense", "content", "two_column", "blank"],
+            "three_column": ["three_column", "content_dense", "two_column", "blank"]
         }
 
     def plan_slides(
@@ -148,12 +162,12 @@ class SlidePlanner:
             # Add as a custom attribute for debugging
             planned_slide.__dict__['ml_recommendation'] = layout_recommendation
         
-        # Apply bullet point limits
-        if len(planned_slide.bullets) > config.max_bullets_per_slide:
-            # Option 1: Truncate bullets
-            if config.max_bullets_per_slide > 0:
-                planned_slide.bullets = planned_slide.bullets[:config.max_bullets_per_slide]
-                logger.warning(f"Slide {slide.index}: Truncated bullets from {len(slide.bullets)} to {len(planned_slide.bullets)}")
+        # Mark slides that need splitting - removal of hard truncation (T-100: Support hierarchical bullets)
+        bullet_texts = planned_slide.get_bullet_texts()
+        if len(bullet_texts) > config.max_bullets_per_slide and config.max_bullets_per_slide > 0:
+            # Mark slide for splitting in _optimize_slide_sequence rather than truncating
+            planned_slide.needs_splitting = True
+            logger.info(f"Slide {slide.index}: Marked for splitting due to {len(bullet_texts)} bullets > {config.max_bullets_per_slide} limit")
         
         # Enhance image queries based on content
         if config.include_images and not planned_slide.image_query:
@@ -173,7 +187,7 @@ class SlidePlanner:
 
     def _select_layout_with_ml(self, slide: SlidePlan) -> 'LayoutRecommendation':
         """
-        Select layout using ML recommendation with rule-based fallback.
+        Select layout using LLM/ML recommendation with rule-based fallback.
         
         Args:
             slide: SlidePlan to get layout recommendation for
@@ -181,25 +195,44 @@ class SlidePlanner:
         Returns:
             LayoutRecommendation object with layout choice and metadata
         """
-        # Try ML recommendation first if enabled
+        # Try LLM-based recommendation first if enabled
         if self.enable_ml_layouts and self.layout_recommender:
             try:
                 # Get available layouts for this template
                 available_layouts = self.template_parser.layout_map
                 
-                # Get ML recommendation
-                recommendation = self.layout_recommender.recommend_layout(
+                # First try LLM-based semantic analysis (T-98)
+                try:
+                    llm_recommendation = self.layout_recommender.recommend_layout_with_llm(
+                        slide, available_layouts
+                    )
+                    
+                    # Log the LLM recommendation for debugging
+                    logger.debug(f"LLM recommendation for slide {slide.index}: "
+                               f"{llm_recommendation.slide_type} (confidence: {llm_recommendation.confidence:.2f})")
+                    
+                    # Use LLM recommendation if confidence is high enough
+                    if llm_recommendation.confidence >= 0.6:  # Threshold for LLM recommendations
+                        return llm_recommendation
+                    else:
+                        logger.debug(f"LLM confidence too low ({llm_recommendation.confidence:.2f}), trying ML fallback")
+                
+                except Exception as e:
+                    logger.debug(f"LLM layout recommendation failed for slide {slide.index}: {e}")
+                
+                # Fallback to traditional ML recommendation if LLM fails or confidence is low
+                ml_recommendation = self.layout_recommender.recommend_layout(
                     slide, available_layouts
                 )
                 
-                # Log the recommendation for debugging
+                # Log the ML recommendation for debugging
                 logger.debug(f"ML recommendation for slide {slide.index}: "
-                           f"{recommendation.slide_type} (confidence: {recommendation.confidence:.2f})")
+                           f"{ml_recommendation.slide_type} (confidence: {ml_recommendation.confidence:.2f})")
                 
-                return recommendation
+                return ml_recommendation
                 
             except Exception as e:
-                logger.warning(f"ML layout recommendation failed for slide {slide.index}: {e}")
+                logger.warning(f"Layout recommendation failed for slide {slide.index}: {e}")
                 # Fall through to rule-based selection
         
         # Use rule-based fallback
@@ -311,8 +344,8 @@ class SlidePlanner:
             return "Welcome and introduce the presentation topic"
         elif slide.slide_type == "section":
             return f"Transition to new section: {slide.title}"
-        elif slide.bullets:
-            bullet_count = len(slide.bullets)
+        elif slide.get_bullet_texts():
+            bullet_count = len(slide.get_bullet_texts())
             return f"Cover {bullet_count} key points, allowing time for questions"
         else:
             return f"Present the content of: {slide.title}"
@@ -334,20 +367,23 @@ class SlidePlanner:
         """
         optimized_slides = slides.copy()
         
-        # Check if we need to split slides with too many bullets
+        # Check if we need to split slides marked for splitting
         slides_to_add = []
         slides_to_remove = []
         
         for i, slide in enumerate(optimized_slides):
-            if (len(slide.bullets) > config.max_bullets_per_slide and 
-                config.max_bullets_per_slide > 0):
-                
+            # Check for the needs_splitting attribute set in _plan_individual_slide
+            needs_splitting = getattr(slide, 'needs_splitting', False)
+            if needs_splitting:
                 # Split the slide
                 split_slides = self._split_slide(slide, config.max_bullets_per_slide)
                 if len(split_slides) > 1:
                     slides_to_remove.append(i)
                     slides_to_add.extend([(i, split_slide) for split_slide in split_slides])
-                    logger.info(f"Split slide {slide.index} into {len(split_slides)} slides")
+                    logger.info(f"Split slide {slide.index} into {len(split_slides)} slides - zero content loss")
+                else:
+                    # Clear the needs_splitting flag if we couldn't actually split
+                    slide.needs_splitting = False
         
         # Apply the splits (in reverse order to maintain indices)
         for i in reversed(slides_to_remove):
@@ -370,7 +406,7 @@ class SlidePlanner:
 
     def _split_slide(self, slide: SlidePlan, max_bullets: int) -> List[SlidePlan]:
         """
-        Split a slide with too many bullets into multiple slides.
+        Split a slide with too many bullets into multiple slides (T-100: Support hierarchical bullets).
         
         Args:
             slide: Slide to split
@@ -379,36 +415,61 @@ class SlidePlanner:
         Returns:
             List of split slides
         """
-        if len(slide.bullets) <= max_bullets:
+        bullet_texts = slide.get_bullet_texts()
+        if len(bullet_texts) <= max_bullets:
             return [slide]
         
         split_slides = []
-        bullets = slide.bullets.copy()
         part_num = 1
         
-        while bullets:
-            # Take the next batch of bullets
-            current_bullets = bullets[:max_bullets]
-            bullets = bullets[max_bullets:]
+        # Handle hierarchical vs legacy bullets
+        if slide.bullet_hierarchy is not None:
+            # For hierarchical bullets, use content fit analyzer's chunking
+            from .content_fit_analyzer import ContentFitAnalyzer
+            analyzer = ContentFitAnalyzer()
+            bullet_chunks = analyzer._chunk_hierarchical_bullets(slide.bullet_hierarchy, max_bullets)
             
-            # Create the split slide
-            split_slide = slide.model_copy()
-            split_slide.bullets = current_bullets
-            
-            # Modify title to indicate part
-            if part_num == 1:
+            for chunk in bullet_chunks:
+                split_slide = slide.model_copy()
+                split_slide.bullet_hierarchy = chunk
+                split_slide.bullets = []  # Clear legacy bullets
+                
+                # Modify title to indicate part
                 split_slide.title = f"{slide.title} (Part {part_num})"
-            else:
+                
+                # Update speaker notes
+                if part_num < len(bullet_chunks):
+                    split_slide.speaker_notes = f"Part {part_num} of {slide.title} - continue to next slide"
+                else:
+                    split_slide.speaker_notes = f"Final part of {slide.title}"
+                
+                split_slides.append(split_slide)
+                part_num += 1
+        else:
+            # Legacy bullet handling
+            bullets = slide.bullets.copy()
+            
+            while bullets:
+                # Take the next batch of bullets
+                current_bullets = bullets[:max_bullets]
+                bullets = bullets[max_bullets:]
+                
+                # Create the split slide
+                split_slide = slide.model_copy()
+                split_slide.bullets = current_bullets
+                split_slide.bullet_hierarchy = None
+                
+                # Modify title to indicate part
                 split_slide.title = f"{slide.title} (Part {part_num})"
-            
-            # Update speaker notes
-            if bullets:  # More slides to come
-                split_slide.speaker_notes = f"Part {part_num} of {slide.title} - continue to next slide"
-            else:  # Last slide
-                split_slide.speaker_notes = f"Final part of {slide.title}"
-            
-            split_slides.append(split_slide)
-            part_num += 1
+                
+                # Update speaker notes
+                if bullets:  # More slides to come
+                    split_slide.speaker_notes = f"Part {part_num} of {slide.title} - continue to next slide"
+                else:  # Last slide
+                    split_slide.speaker_notes = f"Final part of {slide.title}"
+                
+                split_slides.append(split_slide)
+                part_num += 1
         
         return split_slides
 
@@ -429,22 +490,47 @@ class SlidePlanner:
         """
         logger.info("Optimizing slides for content fit")
         
+        template_style = getattr(self.template_parser, 'template_style', None)
+        
+        # Step 1: Apply SmartContentFitter rebalancing first
+        logger.info("Applying smart content rebalancing across slides")
+        rebalanced_slides = self.smart_fitter.rebalance(slides, template_style)
+        
         optimized_slides = []
         content_fit_results = []
         
-        template_style = getattr(self.template_parser, 'template_style', None)
-        
-        for original_slide_from_input_list in slides:
+        for i, original_slide_from_input_list in enumerate(slides):
+            # Use rebalanced slide if available, otherwise original
+            rebalanced_slide = rebalanced_slides[i] if i < len(rebalanced_slides) else original_slide_from_input_list
+            
             # Initial optimization attempt (summarization T-74, font tuning T-75)
             fit_result = self.content_fit_analyzer.optimize_slide_content(
-                original_slide_from_input_list, template_style
+                rebalanced_slide, template_style
             )
             content_fit_results.append(fit_result)
 
-            current_slide_plan = fit_result.modified_slide_plan if fit_result.modified_slide_plan else original_slide_from_input_list
+            current_slide_plan = fit_result.modified_slide_plan if fit_result.modified_slide_plan else rebalanced_slide
             needs_further_action = fit_result.density_analysis.requires_action or fit_result.final_action == "split_slide"
 
             if needs_further_action:
+                # Step 2a: Try dynamic layout upgrading first (T-92)
+                logger.debug(f"Slide {original_slide_from_input_list.index}: Attempting dynamic layout upgrade")
+                upgraded_slide = self.content_fit_analyzer.dynamic_layout_upgrading(
+                    current_slide_plan, self.template_parser, template_style
+                )
+                
+                if upgraded_slide:
+                    # Verify the upgrade actually resolves the issue
+                    upgrade_density_analysis = self.content_fit_analyzer.analyze_slide_density(upgraded_slide, template_style)
+                    if not upgrade_density_analysis.requires_action:
+                        optimized_slides.append(upgraded_slide)
+                        logger.info(f"Slide {original_slide_from_input_list.index}: Dynamic layout upgrade successful, content now fits")
+                        continue  # Skip to next slide
+                    else:
+                        current_slide_plan = upgraded_slide  # Use upgraded layout for further processing
+                        logger.info(f"Slide {original_slide_from_input_list.index}: Dynamic layout upgrade provided improvement, continuing with further optimization")
+                
+                # Step 2b: Try legacy layout up-shift if dynamic upgrade didn't fully resolve
                 current_layout_id = current_slide_plan.layout_id
                 current_layout_type = self.template_parser.get_layout_type_by_id(current_layout_id)
                 upshift_attempted_and_succeeded = False
@@ -616,8 +702,8 @@ class SlidePlanner:
             if slide.chart_data:
                 charts_count += 1
             
-            # Count bullets
-            total_bullets += len(slide.bullets)
+            # Count bullets (T-100: Support hierarchical bullets)
+            total_bullets += len(slide.get_bullet_texts())
         
         return {
             "total_slides": len(slides),

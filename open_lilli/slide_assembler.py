@@ -6,12 +6,12 @@ from pathlib import Path
 from typing import Dict, List, Optional, Union
 
 from pptx import Presentation
-from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
+from pptx.enum.text import PP_ALIGN, MSO_ANCHOR, MSO_AUTO_SIZE
 from pptx.util import Inches, Pt
 from pptx.dml.color import RGBColor
 from pptx.enum.shapes import MSO_SHAPE_TYPE
 
-from .models import Outline, SlidePlan, StyleValidationConfig, FontInfo, BulletInfo, FontAdjustment, NativeChartData
+from .models import Outline, SlidePlan, StyleValidationConfig, FontInfo, BulletInfo, FontAdjustment, NativeChartData, BulletItem
 from .template_parser import TemplateParser
 from .exceptions import StyleError, ValidationConfigError
 
@@ -217,8 +217,12 @@ class SlideAssembler:
         # Add content based on slide type
         if slide_plan.slide_type == "title":
             self._add_title_slide_content(existing_slide, slide_plan, language) # Pass language
-        elif slide_plan.bullets:
-            self._add_bullet_content(existing_slide, slide_plan.bullets, language) # Pass language
+        elif slide_plan.bullet_hierarchy is not None or slide_plan.bullets:
+            # T-100: Use hierarchical bullet content if available, otherwise fall back to legacy
+            if slide_plan.bullet_hierarchy is not None:
+                self._add_hierarchical_bullet_content(existing_slide, slide_plan, language)
+            else:
+                self._add_bullet_content(existing_slide, slide_plan.bullets, language) # Pass language
         
         # Add visuals
         if "native_chart" in slide_visuals and slide_plan.chart_data:
@@ -305,8 +309,12 @@ class SlideAssembler:
         if slide_plan.slide_type == "title":
             # Assuming _add_title_slide_content also needs language for RTL subtitle
             self._add_title_slide_content(slide, slide_plan, language) # Pass language
-        elif slide_plan.bullets:
-            self._add_bullet_content(slide, slide_plan.bullets, language) # Pass language
+        elif slide_plan.bullet_hierarchy is not None or slide_plan.bullets:
+            # T-100: Use hierarchical bullet content if available, otherwise fall back to legacy
+            if slide_plan.bullet_hierarchy is not None:
+                self._add_hierarchical_bullet_content(slide, slide_plan, language)
+            else:
+                self._add_bullet_content(slide, slide_plan.bullets, language) # Pass language
         
         # Add visuals
         if "native_chart" in slide_visuals and slide_plan.chart_data:
@@ -333,6 +341,11 @@ class SlideAssembler:
         # Add speaker notes
         if slide_plan.speaker_notes:
             self._add_speaker_notes(slide, slide_plan.speaker_notes)
+        
+        # T-93: Remove/hide any empty placeholders to avoid style warnings
+        hidden_count = self._remove_empty_placeholders_from_slide(slide)
+        if hidden_count > 0:
+            logger.debug(f"Hidden {hidden_count} empty placeholders on slide {slide_plan.index}")
 
     def _add_title(self, slide, title: str, language: str) -> None: # Add language
         """Add title to slide."""
@@ -376,23 +389,31 @@ class SlideAssembler:
         """Add content specific to title slides."""
         try:
             # Try to find subtitle placeholder
+            subtitle_placeholder = None
             for placeholder in slide.placeholders:
                 if placeholder.placeholder_format.type == 3:  # SUBTITLE
-                    subtitle_text = ""
-                    if slide_plan.bullets: # Assuming bullets might be used as subtitle parts
-                        subtitle_text = " • ".join(slide_plan.bullets[:2])
-                    elif hasattr(slide_plan, 'subtitle') and slide_plan.subtitle:
-                        subtitle_text = slide_plan.subtitle
-                    
-                    if subtitle_text:
-                        placeholder.text = subtitle_text
-                        # Apply RTL alignment for subtitle if needed
-                        if language.lower() in RTL_LANGUAGES:
-                            if placeholder.text_frame and placeholder.text_frame.paragraphs:
-                                for para in placeholder.text_frame.paragraphs:
-                                    para.alignment = PP_ALIGN.RIGHT
-                        logger.debug(f"Added subtitle: {subtitle_text}")
+                    subtitle_placeholder = placeholder
                     break
+            
+            if subtitle_placeholder:
+                subtitle_text = ""
+                if slide_plan.bullets: # Assuming bullets might be used as subtitle parts
+                    subtitle_text = " • ".join(slide_plan.bullets[:2])
+                elif hasattr(slide_plan, 'subtitle') and slide_plan.subtitle:
+                    subtitle_text = slide_plan.subtitle
+                
+                if subtitle_text:
+                    subtitle_placeholder.text = subtitle_text
+                    # Apply RTL alignment for subtitle if needed
+                    if language.lower() in RTL_LANGUAGES:
+                        if subtitle_placeholder.text_frame and subtitle_placeholder.text_frame.paragraphs:
+                            for para in subtitle_placeholder.text_frame.paragraphs:
+                                para.alignment = PP_ALIGN.RIGHT
+                    logger.debug(f"Added subtitle: {subtitle_text}")
+                else:
+                    # T-93: Hide empty subtitle placeholder to avoid style warning
+                    self._hide_empty_placeholder(subtitle_placeholder, "subtitle")
+                    logger.debug("Hidden empty subtitle placeholder to avoid style warning")
                     
         except Exception as e:
             logger.error(f"Failed to add title slide content: {e}")
@@ -400,66 +421,195 @@ class SlideAssembler:
     def _add_bullet_content(self, slide, bullets: List[str], language: str) -> None: # Add language
         """Add bullet points to slide."""
         try:
-            # Find content placeholder
-            content_placeholder = None
+            # T-94: Find all BODY placeholders for two-column distribution
+            body_placeholders = []
             
             for placeholder in slide.placeholders:
                 ph_type = placeholder.placeholder_format.type
                 if ph_type in (2, 7):  # BODY or OBJECT
-                    content_placeholder = placeholder
-                    break
+                    body_placeholders.append(placeholder)
             
-            if not content_placeholder:
+            if not body_placeholders:
                 logger.warning("No content placeholder found, looking for any text placeholder")
                 # Fallback: look for any placeholder we can use
                 for placeholder in slide.placeholders:
                     if hasattr(placeholder, 'text_frame'):
-                        content_placeholder = placeholder
+                        body_placeholders.append(placeholder)
                         break
             
-            if content_placeholder and hasattr(content_placeholder, 'text_frame'):
-                text_frame = content_placeholder.text_frame
-                text_frame.clear()  # Clear existing content
-                
-                # Add bullets
-                for i, bullet_text in enumerate(bullets):
-                    # Truncate if too long
-                    if len(bullet_text) > self.max_bullet_length:
-                        bullet_text = bullet_text[:self.max_bullet_length - 3] + "..."
-                    
-                    if i == 0:
-                        # Use the first paragraph
-                        p = text_frame.paragraphs[0]
-                    else:
-                        # Add new paragraphs for subsequent bullets
-                        p = text_frame.add_paragraph()
-                    
-                    p.text = bullet_text
-                    p.level = 0  # Top-level bullet
-                    
-                    # Apply formatting (font size will be adjusted later if needed)
-                    if p.runs:
-                        run = p.runs[0]
-                        run.font.size = Pt(18)  # Default size
-
-                        # Proactive font selection for bullets
-                        specific_font_name = self.template_parser.template_style.language_specific_fonts.get(language.lower())
-                        if specific_font_name:
-                            run.font.name = specific_font_name
-                            logger.debug(f"Applied language-specific font '{specific_font_name}' for bullets in language '{language.lower()}'")
-
-                # RTL alignment for bullets
-                if language.lower() in RTL_LANGUAGES:
-                    for para in text_frame.paragraphs:
-                        if para.text and para.text.strip(): # Only align if paragraph has text
-                            para.alignment = PP_ALIGN.RIGHT
-                
-                logger.debug(f"Added {len(bullets)} bullet points")
-            else:
+            if not body_placeholders:
                 logger.warning("No suitable placeholder found for bullet content")
+                return
+            
+            # T-94: Two-column bullet distribution when ≥2 BODY placeholders
+            if len(body_placeholders) >= 2 and len(bullets) > 1:
+                self._distribute_bullets_across_columns(body_placeholders, bullets, language)
+            else:
+                # Standard single-column bullet distribution
+                self._add_bullets_to_placeholder(body_placeholders[0], bullets, language)
                 
         except Exception as e:
             logger.error(f"Failed to add bullet content: {e}")
+
+    def _add_hierarchical_bullet_content(self, slide, slide_plan: SlidePlan, language: str) -> None:
+        """
+        Add hierarchical bullet content to slide (T-100).
+        
+        Args:
+            slide: PowerPoint slide object
+            slide_plan: SlidePlan with hierarchical bullet structure
+            language: Language code for text formatting
+        """
+        try:
+            # Get effective bullets (hierarchical or legacy)
+            bullet_items = slide_plan.get_effective_bullets()
+            
+            if not bullet_items:
+                return
+            
+            # Find BODY placeholders
+            body_placeholders = []
+            
+            for placeholder in slide.placeholders:
+                ph_type = placeholder.placeholder_format.type
+                if ph_type in (2, 7):  # BODY or OBJECT
+                    body_placeholders.append(placeholder)
+            
+            if not body_placeholders:
+                logger.warning("No content placeholder found, looking for any text placeholder")
+                # Fallback: look for any placeholder we can use
+                for placeholder in slide.placeholders:
+                    if hasattr(placeholder, 'text_frame'):
+                        body_placeholders.append(placeholder)
+                        break
+            
+            if not body_placeholders:
+                logger.warning("No suitable placeholder found for hierarchical bullet content")
+                return
+            
+            # For hierarchical bullets, use single placeholder to maintain structure
+            # Multi-column distribution would break hierarchy, so we use the first placeholder
+            self._add_hierarchical_bullets_to_placeholder(body_placeholders[0], bullet_items, language)
+            logger.debug(f"Added {len(bullet_items)} hierarchical bullets to slide")
+                
+        except Exception as e:
+            logger.error(f"Failed to add hierarchical bullet content: {e}")
+
+    def _distribute_bullets_across_columns(
+        self, 
+        body_placeholders: List, 
+        bullets: List[str], 
+        language: str
+    ) -> None:
+        """
+        Distribute bullets evenly across multiple BODY placeholders (T-94).
+        
+        Args:
+            body_placeholders: List of BODY placeholder objects
+            bullets: List of bullet text strings
+            language: Language code for text formatting
+        """
+        num_columns = min(len(body_placeholders), 2)  # Limit to 2 columns for now
+        bullets_per_column = len(bullets) // num_columns
+        extra_bullets = len(bullets) % num_columns
+        
+        start_idx = 0
+        for col_idx in range(num_columns):
+            # Distribute extra bullets to first columns
+            bullets_in_this_column = bullets_per_column + (1 if col_idx < extra_bullets else 0)
+            end_idx = start_idx + bullets_in_this_column
+            
+            column_bullets = bullets[start_idx:end_idx]
+            
+            if column_bullets:  # Only add if there are bullets for this column
+                self._add_bullets_to_placeholder(body_placeholders[col_idx], column_bullets, language)
+                logger.debug(f"Added {len(column_bullets)} bullets to column {col_idx + 1}")
+            
+            start_idx = end_idx
+        
+        logger.info(f"Distributed {len(bullets)} bullets across {num_columns} columns")
+
+    def _add_bullets_to_placeholder(
+        self, 
+        placeholder, 
+        bullets: List[str], 
+        language: str
+    ) -> None:
+        """
+        Add bullets to a specific placeholder (legacy format).
+        
+        Args:
+            placeholder: Placeholder object to add bullets to
+            bullets: List of bullet text strings
+            language: Language code for text formatting
+        """
+        # Convert to BulletItem format for unified handling
+        bullet_items = [BulletItem(text=bullet, level=0) for bullet in bullets]
+        self._add_hierarchical_bullets_to_placeholder(placeholder, bullet_items, language)
+
+    def _add_hierarchical_bullets_to_placeholder(
+        self, 
+        placeholder, 
+        bullet_items: List[BulletItem], 
+        language: str
+    ) -> None:
+        """
+        Add hierarchical bullets to a specific placeholder (T-100).
+        
+        Args:
+            placeholder: Placeholder object to add bullets to
+            bullet_items: List of BulletItem objects with hierarchy information
+            language: Language code for text formatting
+        """
+        if not hasattr(placeholder, 'text_frame'):
+            logger.warning("Placeholder does not have text_frame attribute")
+            return
+        
+        text_frame = placeholder.text_frame
+        text_frame.clear()  # Clear existing content
+        
+        # Add bullets with hierarchy support
+        for i, bullet_item in enumerate(bullet_items):
+            bullet_text = bullet_item.text
+            bullet_level = bullet_item.level
+            
+            # Truncate if too long
+            if len(bullet_text) > self.max_bullet_length:
+                bullet_text = bullet_text[:self.max_bullet_length - 3] + "..."
+            
+            if i == 0:
+                # Use the first paragraph
+                p = text_frame.paragraphs[0]
+            else:
+                # Add new paragraphs for subsequent bullets
+                p = text_frame.add_paragraph()
+            
+            p.text = bullet_text
+            p.level = min(bullet_level, 4)  # PowerPoint supports levels 0-4
+            
+            # Apply formatting (font size will be adjusted later if needed)
+            if p.runs:
+                run = p.runs[0]
+                
+                # Adjust font size based on hierarchy level (T-100)
+                base_size = 18
+                size_reduction = bullet_level * 2  # Reduce by 2pt per level
+                adjusted_size = max(12, base_size - size_reduction)  # Minimum 12pt
+                run.font.size = Pt(adjusted_size)
+
+                # Proactive font selection for bullets
+                specific_font_name = self.template_parser.template_style.language_specific_fonts.get(language.lower())
+                if specific_font_name:
+                    run.font.name = specific_font_name
+                    logger.debug(f"Applied language-specific font '{specific_font_name}' for bullets in language '{language.lower()}'")
+
+                logger.debug(f"Applied bullet level {bullet_level} with font size {adjusted_size}pt")
+
+        # RTL alignment for bullets
+        if language.lower() in RTL_LANGUAGES:
+            for para in text_frame.paragraphs:
+                if para.text and para.text.strip(): # Only align if paragraph has text
+                    para.alignment = PP_ALIGN.RIGHT
 
     def _add_chart_image(self, slide, chart_path: str) -> None:
         """Add chart image to slide."""
@@ -1316,3 +1466,126 @@ class SlideAssembler:
         
         except Exception as e:
             logger.debug(f"Error adjusting text frame font: {e}")
+
+    def _hide_empty_placeholder(self, placeholder, placeholder_name: str) -> None:
+        """
+        Hide an empty placeholder to avoid style validation warnings.
+        
+        Args:
+            placeholder: Placeholder object to hide
+            placeholder_name: Name for logging purposes
+        """
+        try:
+            # Method 1: Try to make the placeholder invisible
+            if hasattr(placeholder, 'visible'):
+                placeholder.visible = False
+                logger.debug(f"Set {placeholder_name} placeholder invisible")
+                return
+            
+            # Method 2: Try to set shape visibility
+            if hasattr(placeholder, 'element') and hasattr(placeholder.element, 'set'):
+                # Try to add hidden attribute to the shape
+                try:
+                    placeholder.element.set('hidden', '1')
+                    logger.debug(f"Set {placeholder_name} placeholder hidden via XML attribute")
+                    return
+                except:
+                    pass
+            
+            # Method 3: Move placeholder off-slide (position outside visible area)
+            if hasattr(placeholder, 'left') and hasattr(placeholder, 'top'):
+                placeholder.left = Inches(-10)  # Move far left, outside slide
+                placeholder.top = Inches(-10)   # Move far up, outside slide
+                logger.debug(f"Moved {placeholder_name} placeholder off-slide to hide it")
+                return
+            
+            # Method 4: Set placeholder size to zero
+            if hasattr(placeholder, 'width') and hasattr(placeholder, 'height'):
+                placeholder.width = Inches(0.01)  # Minimal size
+                placeholder.height = Inches(0.01)
+                logger.debug(f"Set {placeholder_name} placeholder to minimal size")
+                return
+            
+            # Method 5: Clear any default text that might be in the placeholder
+            if hasattr(placeholder, 'text_frame') and placeholder.text_frame:
+                placeholder.text_frame.clear()
+                if hasattr(placeholder.text_frame, 'auto_size'):
+                    try:
+                        placeholder.text_frame.auto_size = MSO_AUTO_SIZE.NONE
+                    except:
+                        pass
+                logger.debug(f"Cleared {placeholder_name} placeholder text frame")
+                return
+            
+            logger.warning(f"Could not hide {placeholder_name} placeholder - no suitable method found")
+            
+        except Exception as e:
+            logger.warning(f"Failed to hide {placeholder_name} placeholder: {e}")
+
+    def _remove_empty_placeholders_from_slide(self, slide) -> int:
+        """
+        Remove or hide all empty placeholders from a slide to avoid style warnings.
+        
+        Args:
+            slide: Slide object to process
+            
+        Returns:
+            Number of placeholders hidden/removed
+        """
+        hidden_count = 0
+        
+        try:
+            for placeholder in slide.placeholders:
+                # Check if placeholder is empty
+                is_empty = True
+                
+                if hasattr(placeholder, 'text_frame') and placeholder.text_frame:
+                    if placeholder.text_frame.text.strip():
+                        is_empty = False
+                elif hasattr(placeholder, 'text') and placeholder.text:
+                    if placeholder.text.strip():
+                        is_empty = False
+                
+                # Hide empty placeholders (except title which should always be visible)
+                if is_empty and placeholder.placeholder_format.type != 1:  # Not TITLE
+                    placeholder_type_name = self._get_placeholder_type_name(placeholder.placeholder_format.type)
+                    self._hide_empty_placeholder(placeholder, placeholder_type_name)
+                    hidden_count += 1
+        
+        except Exception as e:
+            logger.warning(f"Error processing empty placeholders: {e}")
+        
+        return hidden_count
+
+    def _get_placeholder_type_name(self, placeholder_type: int) -> str:
+        """
+        Get human-readable name for placeholder type.
+        
+        Args:
+            placeholder_type: PowerPoint placeholder type constant
+            
+        Returns:
+            Human-readable placeholder type name
+        """
+        type_names = {
+            1: "title",
+            2: "body", 
+            3: "subtitle",
+            4: "center_title",
+            5: "center_subtitle",
+            6: "date_time",
+            7: "footer",
+            8: "header",
+            9: "slide_number",
+            10: "picture",
+            11: "chart",
+            12: "table",
+            13: "clip_art",
+            14: "organization_chart",
+            15: "media_clip",
+            16: "vertical_object",
+            17: "vertical_body",
+            18: "picture"
+        }
+        
+        return type_names.get(placeholder_type, f"unknown_type_{placeholder_type}")

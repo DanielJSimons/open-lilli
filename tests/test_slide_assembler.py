@@ -592,3 +592,284 @@ class TestSlideAssemblerInternationalization:
         assert font_name_violations_en, "Validation failed for non-overridden language."
         assert font_name_violations_en[0]['expected'] == "Calibri"
         assert font_name_violations_en[0]['actual'] == "Test Arabic Font"
+
+
+class TestSubtitlePlaceholderGuard:
+    """Test cases for T-93: Subtitle Placeholder Guard."""
+    
+    def setup_method(self):
+        """Set up test fixtures."""
+        self.mock_template_parser = Mock(spec=TemplateParser)
+        self.assembler = SlideAssembler(self.mock_template_parser)
+    
+    def test_t93_hide_empty_subtitle_placeholder(self):
+        """Test T-93: Empty subtitle placeholder is hidden to avoid style warnings."""
+        # Create mock slide with subtitle placeholder
+        mock_slide = Mock()
+        mock_subtitle_placeholder = Mock()
+        mock_subtitle_placeholder.placeholder_format.type = 3  # SUBTITLE
+        mock_subtitle_placeholder.text_frame = Mock()
+        mock_subtitle_placeholder.text_frame.text = ""  # Empty
+        
+        # Mock other placeholders
+        mock_title_placeholder = Mock()
+        mock_title_placeholder.placeholder_format.type = 1  # TITLE
+        mock_title_placeholder.text_frame = Mock()
+        mock_title_placeholder.text_frame.text = "Title Text"
+        
+        mock_slide.placeholders = [mock_title_placeholder, mock_subtitle_placeholder]
+        
+        # Create slide plan without subtitle
+        slide_plan = SlidePlan(
+            index=0,
+            slide_type="title",
+            title="Test Title",
+            bullets=[]  # No bullets, so no subtitle
+        )
+        
+        # Mock the hide method to track calls
+        with patch.object(self.assembler, '_hide_empty_placeholder') as mock_hide:
+            self.assembler._add_title_slide_content(mock_slide, slide_plan, "en")
+            
+            # Should have called hide for empty subtitle
+            mock_hide.assert_called_once_with(mock_subtitle_placeholder, "subtitle")
+    
+    def test_t93_no_hide_when_subtitle_has_content(self):
+        """Test that subtitle placeholder is not hidden when it has content."""
+        # Create mock slide with subtitle placeholder
+        mock_slide = Mock()
+        mock_subtitle_placeholder = Mock()
+        mock_subtitle_placeholder.placeholder_format.type = 3  # SUBTITLE
+        
+        mock_slide.placeholders = [mock_subtitle_placeholder]
+        
+        # Create slide plan with subtitle content
+        slide_plan = SlidePlan(
+            index=0,
+            slide_type="title",
+            title="Test Title",
+            bullets=["Subtitle content", "More content"]
+        )
+        
+        # Mock the hide method to track calls
+        with patch.object(self.assembler, '_hide_empty_placeholder') as mock_hide:
+            self.assembler._add_title_slide_content(mock_slide, slide_plan, "en")
+            
+            # Should NOT have called hide since subtitle has content
+            mock_hide.assert_not_called()
+            
+            # Should have set subtitle text
+            expected_subtitle = "Subtitle content • More content"
+            assert mock_subtitle_placeholder.text == expected_subtitle
+    
+    def test_t93_remove_empty_placeholders_from_slide(self):
+        """Test removal of multiple empty placeholders from a slide."""
+        # Create mock slide with various placeholders
+        mock_slide = Mock()
+        
+        # Title placeholder (should never be hidden)
+        mock_title = Mock()
+        mock_title.placeholder_format.type = 1  # TITLE
+        mock_title.text_frame = Mock()
+        mock_title.text_frame.text = "Title"
+        
+        # Empty subtitle placeholder (should be hidden)
+        mock_subtitle = Mock()
+        mock_subtitle.placeholder_format.type = 3  # SUBTITLE
+        mock_subtitle.text_frame = Mock()
+        mock_subtitle.text_frame.text = ""
+        
+        # Empty footer placeholder (should be hidden)
+        mock_footer = Mock()
+        mock_footer.placeholder_format.type = 7  # FOOTER
+        mock_footer.text_frame = Mock()
+        mock_footer.text_frame.text = "   "  # Whitespace only
+        
+        # Non-empty body placeholder (should not be hidden)
+        mock_body = Mock()
+        mock_body.placeholder_format.type = 2  # BODY
+        mock_body.text_frame = Mock()
+        mock_body.text_frame.text = "Body content"
+        
+        mock_slide.placeholders = [mock_title, mock_subtitle, mock_footer, mock_body]
+        
+        # Mock the hide method to track calls
+        with patch.object(self.assembler, '_hide_empty_placeholder') as mock_hide:
+            hidden_count = self.assembler._remove_empty_placeholders_from_slide(mock_slide)
+            
+            # Should have hidden 2 placeholders (subtitle and footer)
+            assert hidden_count == 2
+            assert mock_hide.call_count == 2
+            
+            # Verify specific placeholders were hidden
+            call_args = [call[0] for call in mock_hide.call_args_list]
+            hidden_placeholders = [args[0] for args in call_args]
+            assert mock_subtitle in hidden_placeholders
+            assert mock_footer in hidden_placeholders
+            assert mock_title not in hidden_placeholders  # Title should never be hidden
+            assert mock_body not in hidden_placeholders   # Body has content
+    
+    def test_t93_hide_placeholder_methods(self):
+        """Test various methods of hiding placeholders."""
+        mock_placeholder = Mock()
+        
+        # Test Method 1: visible attribute
+        mock_placeholder.visible = True
+        self.assembler._hide_empty_placeholder(mock_placeholder, "test")
+        assert mock_placeholder.visible is False
+        
+        # Test Method 3: positioning (if visible attribute doesn't exist)
+        mock_placeholder_pos = Mock()
+        del mock_placeholder_pos.visible  # Remove visible attribute
+        mock_placeholder_pos.left = 100
+        mock_placeholder_pos.top = 100
+        
+        self.assembler._hide_empty_placeholder(mock_placeholder_pos, "test")
+        # Should have moved off-slide
+        assert mock_placeholder_pos.left.value < 0  # Negative position
+        assert mock_placeholder_pos.top.value < 0   # Negative position
+
+
+class TestTwoColumnBulletDistribution:
+    """Test cases for T-94: Two-Column Bullet Distribution."""
+    
+    def setup_method(self):
+        """Set up test fixtures."""
+        self.mock_template_parser = Mock(spec=TemplateParser)
+        self.mock_template_parser.template_style = Mock()
+        self.mock_template_parser.template_style.language_specific_fonts = {}
+        self.assembler = SlideAssembler(self.mock_template_parser)
+    
+    def test_t94_two_column_bullet_distribution(self):
+        """Test T-94: Bullets are distributed evenly across two BODY placeholders."""
+        # Create mock slide with two BODY placeholders
+        mock_slide = Mock()
+        
+        # First BODY placeholder
+        mock_body1 = Mock()
+        mock_body1.placeholder_format.type = 2  # BODY
+        mock_body1.text_frame = Mock()
+        mock_body1.text_frame.paragraphs = [Mock()]  # Initial paragraph
+        mock_body1.text_frame.add_paragraph = Mock(return_value=Mock())
+        
+        # Second BODY placeholder
+        mock_body2 = Mock()
+        mock_body2.placeholder_format.type = 2  # BODY
+        mock_body2.text_frame = Mock()
+        mock_body2.text_frame.paragraphs = [Mock()]  # Initial paragraph
+        mock_body2.text_frame.add_paragraph = Mock(return_value=Mock())
+        
+        mock_slide.placeholders = [mock_body1, mock_body2]
+        
+        # Test with 6 bullets - should be split 3-3
+        bullets = [
+            "Bullet 1", "Bullet 2", "Bullet 3", 
+            "Bullet 4", "Bullet 5", "Bullet 6"
+        ]
+        
+        # Mock the individual placeholder method to track calls
+        with patch.object(self.assembler, '_add_bullets_to_placeholder') as mock_add_bullets:
+            self.assembler._add_bullet_content(mock_slide, bullets, "en")
+            
+            # Should have called _add_bullets_to_placeholder twice
+            assert mock_add_bullets.call_count == 2
+            
+            # Verify the first call (first column)
+            first_call_args = mock_add_bullets.call_args_list[0]
+            assert first_call_args[0][0] == mock_body1  # First placeholder
+            assert first_call_args[0][1] == ["Bullet 1", "Bullet 2", "Bullet 3"]  # First 3 bullets
+            
+            # Verify the second call (second column)
+            second_call_args = mock_add_bullets.call_args_list[1]
+            assert second_call_args[0][0] == mock_body2  # Second placeholder
+            assert second_call_args[0][1] == ["Bullet 4", "Bullet 5", "Bullet 6"]  # Last 3 bullets
+    
+    def test_t94_uneven_bullet_distribution(self):
+        """Test T-94: Uneven bullet count distributed correctly across columns."""
+        # Create mock slide with two BODY placeholders
+        mock_slide = Mock()
+        mock_body1 = Mock()
+        mock_body1.placeholder_format.type = 2
+        mock_body2 = Mock()
+        mock_body2.placeholder_format.type = 2
+        mock_slide.placeholders = [mock_body1, mock_body2]
+        
+        # Test with 5 bullets - should be split 3-2 (extra bullet goes to first column)
+        bullets = ["Bullet 1", "Bullet 2", "Bullet 3", "Bullet 4", "Bullet 5"]
+        
+        with patch.object(self.assembler, '_add_bullets_to_placeholder') as mock_add_bullets:
+            self.assembler._add_bullet_content(mock_slide, bullets, "en")
+            
+            # Verify distribution: 3 bullets in first column, 2 in second
+            first_call_bullets = mock_add_bullets.call_args_list[0][0][1]
+            second_call_bullets = mock_add_bullets.call_args_list[1][0][1]
+            
+            assert len(first_call_bullets) == 3  # First column gets extra bullet
+            assert len(second_call_bullets) == 2
+            assert first_call_bullets == ["Bullet 1", "Bullet 2", "Bullet 3"]
+            assert second_call_bullets == ["Bullet 4", "Bullet 5"]
+    
+    def test_t94_single_body_placeholder_fallback(self):
+        """Test that single BODY placeholder uses standard distribution."""
+        # Create mock slide with only one BODY placeholder
+        mock_slide = Mock()
+        mock_body = Mock()
+        mock_body.placeholder_format.type = 2  # BODY
+        mock_slide.placeholders = [mock_body]
+        
+        bullets = ["Bullet 1", "Bullet 2", "Bullet 3"]
+        
+        with patch.object(self.assembler, '_add_bullets_to_placeholder') as mock_add_bullets:
+            self.assembler._add_bullet_content(mock_slide, bullets, "en")
+            
+            # Should call _add_bullets_to_placeholder once with all bullets
+            assert mock_add_bullets.call_count == 1
+            call_args = mock_add_bullets.call_args_list[0]
+            assert call_args[0][0] == mock_body
+            assert call_args[0][1] == bullets  # All bullets in single column
+    
+    def test_t94_single_bullet_no_distribution(self):
+        """Test that single bullet doesn't trigger two-column distribution."""
+        # Create mock slide with two BODY placeholders
+        mock_slide = Mock()
+        mock_body1 = Mock()
+        mock_body1.placeholder_format.type = 2
+        mock_body2 = Mock()
+        mock_body2.placeholder_format.type = 2
+        mock_slide.placeholders = [mock_body1, mock_body2]
+        
+        # Single bullet should go to first placeholder only
+        bullets = ["Single Bullet"]
+        
+        with patch.object(self.assembler, '_add_bullets_to_placeholder') as mock_add_bullets:
+            self.assembler._add_bullet_content(mock_slide, bullets, "en")
+            
+            # Should use standard single-column distribution
+            assert mock_add_bullets.call_count == 1
+            call_args = mock_add_bullets.call_args_list[0]
+            assert call_args[0][0] == mock_body1  # First placeholder
+            assert call_args[0][1] == bullets
+    
+    def test_t94_distribute_bullets_across_columns_method(self):
+        """Test the _distribute_bullets_across_columns method directly."""
+        mock_body1 = Mock()
+        mock_body2 = Mock()
+        mock_body3 = Mock()  # Third placeholder to test 2-column limit
+        
+        body_placeholders = [mock_body1, mock_body2, mock_body3]
+        bullets = ["A", "B", "C", "D", "E", "F", "G"]
+        
+        with patch.object(self.assembler, '_add_bullets_to_placeholder') as mock_add_bullets:
+            self.assembler._distribute_bullets_across_columns(body_placeholders, bullets, "en")
+            
+            # Should limit to 2 columns even with 3 placeholders available
+            assert mock_add_bullets.call_count == 2
+            
+            # Verify distribution: 4 bullets in first column, 3 in second
+            first_call_bullets = mock_add_bullets.call_args_list[0][0][1]
+            second_call_bullets = mock_add_bullets.call_args_list[1][0][1]
+            
+            assert len(first_call_bullets) == 4  # 7//2 + 1 (extra)
+            assert len(second_call_bullets) == 3  # 7//2
+            assert first_call_bullets == ["A", "B", "C", "D"]
+            assert second_call_bullets == ["E", "F", "G"]
