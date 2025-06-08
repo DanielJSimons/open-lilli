@@ -1,138 +1,445 @@
-⠙ 🎨 Creating visuals...2025-06-08 21:41:26,088 - INFO - Generated placeholder image: assets/placeholder_slide_10_sentiment_business_analytics.png
-2025-06-08 21:41:26,088 - INFO - Sourced image for slide 10 via VisualGenerator (GenAI/Unsplash/Placeholder): assets/placeholder_slide_10_sentiment_business_analytics.png
-2025-06-08 21:41:26,088 - INFO - Generative AI not enabled or asset_library not configured. Skipping.
-2025-06-08 21:41:26,088 - INFO - Attempting Unsplash for query: 'business report presentation'
-⠸ 🎨 Creating visuals...2025-06-08 21:41:26,387 - WARNING - Unsplash download failed for 'business report presentation': 503 Server Error: Service Unavailable for url: https://source.unsplash.com/1600x900/?business+report+presentation
-2025-06-08 21:41:26,387 - INFO - Unsplash did not return an image for query: 'business report presentation'. Proceeding to placeholder.
-2025-06-08 21:41:26,387 - INFO - All external image sources failed for query 'business report presentation'. Generating placeholder.
-⠴ 🎨 Creating visuals...2025-06-08 21:41:26,436 - INFO - Generated placeholder image: assets/placeholder_slide_11_business_report_presentation.png
-2025-06-08 21:41:26,436 - INFO - Sourced image for slide 11 via VisualGenerator (GenAI/Unsplash/Placeholder): assets/placeholder_slide_11_business_report_presentation.png
-2025-06-08 21:41:26,436 - INFO - Flagged native chart for slide 13 (type: bar)
-2025-06-08 21:41:26,436 - INFO - Generative AI not enabled or asset_library not configured. Skipping.
-2025-06-08 21:41:26,436 - INFO - Attempting Unsplash for query: 'project timeline: milestones'
-⠇ 🎨 Creating visuals...2025-06-08 21:41:26,735 - WARNING - Unsplash download failed for 'project timeline: milestones': 503 Server Error: Service Unavailable for url: https://source.unsplash.com/1600x900/?project+timeline+milestones
-2025-06-08 21:41:26,735 - INFO - Unsplash did not return an image for query: 'project timeline: milestones'. Proceeding to placeholder.
-2025-06-08 21:41:26,736 - INFO - All external image sources failed for query 'project timeline: milestones'. Generating placeholder.
-2025-06-08 21:41:26,799 - INFO - Generated placeholder image: assets/placeholder_slide_13_project_timeline_milestones.png
-2025-06-08 21:41:26,799 - INFO - Sourced image for slide 13 via VisualGenerator (GenAI/Unsplash/Placeholder): assets/placeholder_slide_13_project_timeline_milestones.png
-2025-06-08 21:41:26,799 - INFO - Generative AI not enabled or asset_library not configured. Skipping.
-2025-06-08 21:41:26,799 - INFO - Attempting Unsplash for query: 'consulting team energy sector'
-⠹ 🎨 Creating visuals...2025-06-08 21:41:27,100 - WARNING - Unsplash download failed for 'consulting team energy sector': 503 Server Error: Service Unavailable for url: https://source.unsplash.com/1600x900/?consulting+team+energy+sector
-2025-06-08 21:41:27,100 - INFO - Unsplash did not return an image for query: 'consulting team energy sector'. Proceeding to placeholder.
-2025-06-08 21:41:27,100 - INFO - All external image sources failed for query 'consulting team energy sector'. Generating placeholder.
-⠸ 🎨 Creating visuals...2025-06-08 21:41:27,161 - INFO - Generated placeholder image: assets/placeholder_slide_14_consulting_team_energy_sector.png
-2025-06-08 21:41:27,161 - INFO - Sourced image for slide 14 via VisualGenerator (GenAI/Unsplash/Placeholder): assets/placeholder_slide_14_consulting_team_energy_sector.png
-2025-06-08 21:41:27,161 - INFO - Generated visuals for 12 slides
-✅ Generated 3 charts and 12 images
-⠸ 🎨 Creating visuals...2025-06-08 21:41:27,162 - INFO - SlideAssembler initialized
-⠼ 🔍 Reviewing presentation quality...2025-06-08 21:41:27,163 - INFO - Reviewing presentation with 15 slides
-⠼ 🔍 Reviewing presentation quality...2025-06-08 21:41:40,857 - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
-2025-06-08 21:41:40,858 - INFO - Generated 9 feedback items
-2025-06-08 21:41:40,858 - INFO - Evaluating presentation against quality gates
-2025-06-08 21:41:40,858 - WARNING - TemplateStyle or its slide dimensions not available. Skipping alignment and overset text checks.
-2025-06-08 21:41:40,858 - WARNING - Skipping contrast ratio check: TemplateStyle not found on Reviewer instance.
-2025-06-08 21:41:40,859 - INFO - Quality gates evaluation completed: needs_fix (3/7 gates passed)
-✅ Iteration 1 - Score: 0/10, Gates: 3/7
-🔄 Regenerating 2 slides based on feedback...
-⠼ 🔍 Reviewing presentation quality...2025-06-08 21:41:40,860 - INFO - RegenerationManager initialized
-2025-06-08 21:41:40,860 - INFO - Assembling presentation with 15 slides in language: en
-2025-06-08 21:41:40,860 - INFO - Output path: temp_iteration_1.pptx
-⠇ 🔍 Reviewing presentation quality...2025-06-08 21:41:41,088 - ERROR - Failed to add image 'assets/placeholder_slide_1_stakeholder_engagement_energy_transition.png': 'SlidePart' object has no attribute 'presentation'
-2025-06-08 21:41:41,102 - ERROR - Failed to add image 'assets/placeholder_slide_3_research_methodology_energy_sector.png': 'SlidePart' object has no attribute 'presentation'
-2025-06-08 21:41:41,111 - ERROR - Failed to add image 'assets/placeholder_slide_4_workshop_stakeholder_alignment.png': 'SlidePart' object has no attribute 'presentation'
-2025-06-08 21:41:41,119 - ERROR - Failed to add image 'assets/placeholder_slide_5_media_analysis_energy_companies.png': 'SlidePart' object has no attribute 'presentation'
-2025-06-08 21:41:41,127 - INFO - NativeChartBuilder initialized
-2025-06-08 21:41:41,134 - INFO - Created native ChartType.COLUMN chart: Chart
-2025-06-08 21:41:41,134 - ERROR - Failed to add image 'assets/placeholder_slide_6_investment_business_analytics.png': 'SlidePart' object has no attribute 'presentation'
-2025-06-08 21:41:41,142 - ERROR - Failed to add image 'assets/placeholder_slide_7_executive_interviews_energy_transition.png': 'SlidePart' object has no attribute 'presentation'
-2025-06-08 21:41:41,149 - ERROR - Failed to add image 'assets/placeholder_slide_8_stakeholder_analysis_energy.png': 'SlidePart' object has no attribute 'presentation'
-2025-06-08 21:41:41,158 - ERROR - Failed to add image 'assets/placeholder_slide_9_data_analysis_energy_transition.png': 'SlidePart' object has no attribute 'presentation'
-2025-06-08 21:41:41,163 - WARNING - No content placeholder found, looking for any text placeholder
-2025-06-08 21:41:41,163 - INFO - NativeChartBuilder initialized
-2025-06-08 21:41:41,169 - INFO - Created native ChartType.COLUMN chart: Chart
-2025-06-08 21:41:41,169 - ERROR - Failed to add image 'assets/placeholder_slide_10_sentiment_business_analytics.png': 'SlidePart' object has no attribute 'presentation'
-2025-06-08 21:41:41,176 - ERROR - Failed to add image 'assets/placeholder_slide_11_business_report_presentation.png': 'SlidePart' object has no attribute 'presentation'
-⠏ 🔍 Reviewing presentation quality...2025-06-08 21:41:41,193 - INFO - NativeChartBuilder initialized
-2025-06-08 21:41:41,193 - ERROR - Failed to convert legacy chart data: 8 validation errors for NativeChartData
-series.0.values.str
-  Input should be a valid string [type=string_type, input_value=[[1], [2], [3, 4], [4, 5], [5, 6], [7], [8]], input_type=list]
-    For further information visit https://errors.pydantic.dev/2.11/v/string_type
-series.0.values.list[float].0
-  Input should be a valid number [type=float_type, input_value=[1], input_type=list]
-    For further information visit https://errors.pydantic.dev/2.11/v/float_type
-series.0.values.list[float].1
-  Input should be a valid number [type=float_type, input_value=[2], input_type=list]
-    For further information visit https://errors.pydantic.dev/2.11/v/float_type
-series.0.values.list[float].2
-  Input should be a valid number [type=float_type, input_value=[3, 4], input_type=list]
-    For further information visit https://errors.pydantic.dev/2.11/v/float_type
-series.0.values.list[float].3
-  Input should be a valid number [type=float_type, input_value=[4, 5], input_type=list]
-    For further information visit https://errors.pydantic.dev/2.11/v/float_type
-series.0.values.list[float].4
-  Input should be a valid number [type=float_type, input_value=[5, 6], input_type=list]
-    For further information visit https://errors.pydantic.dev/2.11/v/float_type
-series.0.values.list[float].5
-  Input should be a valid number [type=float_type, input_value=[7], input_type=list]
-    For further information visit https://errors.pydantic.dev/2.11/v/float_type
-series.0.values.list[float].6
-  Input should be a valid number [type=float_type, input_value=[8], input_type=list]
-    For further information visit https://errors.pydantic.dev/2.11/v/float_type
-2025-06-08 21:41:41,193 - WARNING - Failed to convert chart data to native format
-2025-06-08 21:41:41,204 - ERROR - Failed to add image 'assets/placeholder_slide_14_consulting_team_energy_sector.png': 'SlidePart' object has no attribute 'presentation'
-2025-06-08 21:41:41,208 - INFO - Starting presentation style validation for language: en. Mode: strict.
-2025-06-08 21:41:41,223 - INFO - Total feedback items generated: 49.
-2025-06-08 21:41:41,223 - ERROR - Strict mode: Style validation failed. Raising StyleError.
-⠋ 🔍 Reviewing presentation quality...
-❌ Error during generation: Style validation failed with 49 feedback items in 'strict' mode.
-Violations:
-  - Unknown: No description
-  - Unknown: No description
-  - Unknown: No description
-  - Unknown: No description
-  - Unknown: No description
-  - Unknown: No description
-  - Unknown: No description
-  - Unknown: No description
-  - Unknown: No description
-  - Unknown: No description
-  - Unknown: No description
-  - Unknown: No description
-  - Unknown: No description
-  - Unknown: No description
-  - Unknown: No description
-  - Unknown: No description
-  - Unknown: No description
-  - Unknown: No description
-  - Unknown: No description
-  - Unknown: No description
-  - Unknown: No description
-  - Unknown: No description
-  - Unknown: No description
-  - Unknown: No description
-  - Unknown: No description
-  - Unknown: No description
-  - Unknown: No description
-  - Unknown: No description
-  - Unknown: No description
-  - Unknown: No description
-  - Unknown: No description
-  - Unknown: No description
-  - Unknown: No description
-  - Unknown: No description
-  - Unknown: No description
-  - Unknown: No description
-  - Unknown: No description
-  - Unknown: No description
-  - Unknown: No description
-  - Unknown: No description
-  - Unknown: No description
-  - Unknown: No description
-  - Unknown: No description
-  - Unknown: No description
-  - Unknown: No description
-  - Unknown: No description
-  - Unknown: No description
-  - Unknown: No description
-  - Unknown: No description
-Run again with --debug or --log-file for details
+✅ Iteration 3 - Score: 0/10, Gates: 3/7
+⚠️  Reached maximum iterations (3) without passing all quality gates
+Final status: 3/7 gates passed
+⠦ 🔧 Assembling PowerPoint...2025-06-08 23:10:19,056 - INFO - Assembling presentation with 15 slides in language: en
+⠦ 🔧 Assembling PowerPoint...2025-06-08 23:10:19,058 - INFO - Output path: strategy-deck.pptx
+⠇ 🔧 Assembling PowerPoint...2025-06-08 23:10:19,318 - INFO - Processing slide plan for original index 0, current title: 'BP Influence & Engagement Assessment' (List length: 15)
+2025-06-08 23:10:19,322 - DEBUG - Added title: BP Influence & Engagement Assessment
+2025-06-08 23:10:19,323 - DEBUG - Total estimated lines for 2 bullets: 2
+2025-06-08 23:10:19,323 - INFO - Slide 0 (_add_bullet_content): Estimated total lines for 2 bullets: 2. Max allowed: 15.
+2025-06-08 23:10:19,323 - DEBUG - Slide 0: Content fits single column estimate. Adding all bullets.
+2025-06-08 23:10:19,323 - DEBUG - Slide 0: Applying single-column distribution for 2 bullets.
+2025-06-08 23:10:19,324 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,324 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,324 - DEBUG - Starting post-processing for slide (ID: 256)...
+2025-06-08 23:10:19,324 - DEBUG - Text Placeholder Title 3 (type: title) has text.
+2025-06-08 23:10:19,325 - DEBUG - Placeholder Subtitle 2 (type: center_title) is considered empty (no text).
+2025-06-08 23:10:19,325 - DEBUG - Set center_title placeholder hidden via XML attribute
+2025-06-08 23:10:19,325 - DEBUG - Text Placeholder Text Placeholder 1 (type: body) has text.
+2025-06-08 23:10:19,325 - DEBUG - Post-process: Hid 1 empty placeholders on slide.
+2025-06-08 23:10:19,325 - DEBUG - Finished post-processing for slide (ID: 256).
+2025-06-08 23:10:19,325 - INFO - Processing slide plan for original index 1, current title: 'Assessment Objectives: Driving Strategic Insights' (List length: 15)
+2025-06-08 23:10:19,327 - DEBUG - Added title: Assessment Objectives: Driving Strategic Insights
+2025-06-08 23:10:19,328 - DEBUG - Total estimated lines for 4 bullets: 4
+2025-06-08 23:10:19,329 - INFO - Slide 1 (_add_bullet_content): Estimated total lines for 4 bullets: 4. Max allowed: 15.
+2025-06-08 23:10:19,329 - DEBUG - Slide 1: Content fits single column estimate. Adding all bullets.
+2025-06-08 23:10:19,329 - DEBUG - Slide 1: Applying single-column distribution for 4 bullets.
+2025-06-08 23:10:19,329 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,329 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,330 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,330 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,335 - DEBUG - STREAM b'IHDR' 16 13
+2025-06-08 23:10:19,335 - DEBUG - STREAM b'IDAT' 41 25616
+2025-06-08 23:10:19,336 - DEBUG - STREAM b'IHDR' 16 13
+2025-06-08 23:10:19,336 - DEBUG - STREAM b'IDAT' 41 25616
+2025-06-08 23:10:19,336 - DEBUG - STREAM b'IHDR' 16 13
+2025-06-08 23:10:19,337 - DEBUG - STREAM b'IDAT' 41 25616
+2025-06-08 23:10:19,337 - DEBUG - Added picture as floating image at top_right: assets/placeholder_slide_1_stakeholder_engagement_energy_transition.png
+2025-06-08 23:10:19,337 - DEBUG - Starting post-processing for slide (ID: 257)...
+2025-06-08 23:10:19,338 - ERROR - Failed to process or add slide from plan (original index 1, title 'Assessment Objectives: Driving Strategic Insights'): shape is not a placeholder
+2025-06-08 23:10:19,338 - INFO - Processing slide plan for original index 2, current title: 'Strategic Assessment: Recommended Approach' (List length: 15)
+2025-06-08 23:10:19,340 - DEBUG - Added title: Strategic Assessment: Recommended Approach
+2025-06-08 23:10:19,341 - DEBUG - Total estimated lines for 7 bullets: 9
+2025-06-08 23:10:19,341 - INFO - Slide 2 (_add_bullet_content): Estimated total lines for 7 bullets: 9. Max allowed: 15.
+2025-06-08 23:10:19,341 - DEBUG - Slide 2: Content fits single column estimate. Adding all bullets.
+2025-06-08 23:10:19,341 - DEBUG - Slide 2: Applying single-column distribution for 7 bullets.
+2025-06-08 23:10:19,341 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,342 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,342 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,342 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,342 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,342 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,342 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,342 - DEBUG - Starting post-processing for slide (ID: 258)...
+2025-06-08 23:10:19,343 - DEBUG - Text Placeholder Title 3 (type: title) has text.
+2025-06-08 23:10:19,343 - DEBUG - Placeholder Subtitle 2 (type: center_title) is considered empty (no text).
+2025-06-08 23:10:19,343 - DEBUG - Set center_title placeholder hidden via XML attribute
+2025-06-08 23:10:19,344 - DEBUG - Text Placeholder Text Placeholder 1 (type: body) has text.
+2025-06-08 23:10:19,344 - DEBUG - Post-process: Hid 1 empty placeholders on slide.
+2025-06-08 23:10:19,344 - DEBUG - Finished post-processing for slide (ID: 258).
+2025-06-08 23:10:19,344 - INFO - Processing slide plan for original index 3, current title: 'Phased Assessment Methodology for Actionable Insights' (List length: 15)
+2025-06-08 23:10:19,349 - DEBUG - Added title: Phased Assessment Methodology for Actionable Insights
+2025-06-08 23:10:19,354 - DEBUG - Total estimated lines for 6 bullets: 6
+2025-06-08 23:10:19,354 - INFO - Slide 3 (_add_bullet_content): Estimated total lines for 6 bullets: 6. Max allowed: 15.
+2025-06-08 23:10:19,354 - DEBUG - Slide 3: Content fits single column estimate. Adding all bullets.
+2025-06-08 23:10:19,354 - DEBUG - Slide 3: Applying single-column distribution for 6 bullets.
+2025-06-08 23:10:19,355 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,356 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,356 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,356 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,356 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,357 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,359 - DEBUG - STREAM b'IHDR' 16 13
+2025-06-08 23:10:19,359 - DEBUG - STREAM b'IDAT' 41 24359
+2025-06-08 23:10:19,359 - DEBUG - STREAM b'IHDR' 16 13
+2025-06-08 23:10:19,359 - DEBUG - STREAM b'IDAT' 41 24359
+2025-06-08 23:10:19,360 - DEBUG - STREAM b'IHDR' 16 13
+2025-06-08 23:10:19,360 - DEBUG - STREAM b'IDAT' 41 24359
+2025-06-08 23:10:19,360 - DEBUG - Added picture as floating image at top_right: assets/placeholder_slide_3_project_phases_diagram.png
+2025-06-08 23:10:19,360 - DEBUG - Starting post-processing for slide (ID: 259)...
+2025-06-08 23:10:19,360 - ERROR - Failed to process or add slide from plan (original index 3, title 'Phased Assessment Methodology for Actionable Insights'): shape is not a placeholder
+2025-06-08 23:10:19,360 - INFO - Processing slide plan for original index 4, current title: 'Phase 1: Establishing Credible Transition Hypotheses' (List length: 15)
+2025-06-08 23:10:19,364 - DEBUG - Added title: Phase 1: Establishing Credible Transition Hypotheses
+2025-06-08 23:10:19,365 - DEBUG - Total estimated lines for 6 bullets: 6
+2025-06-08 23:10:19,365 - INFO - Slide 4 (_add_bullet_content): Estimated total lines for 6 bullets: 6. Max allowed: 15.
+2025-06-08 23:10:19,365 - DEBUG - Slide 4: Content fits single column estimate. Adding all bullets.
+2025-06-08 23:10:19,365 - DEBUG - Slide 4: Applying single-column distribution for 6 bullets.
+⠋ 🔧 Assembling PowerPoint...2025-06-08 23:10:19,366 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,367 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,367 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,367 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,367 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,367 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,369 - DEBUG - STREAM b'IHDR' 16 13
+2025-06-08 23:10:19,369 - DEBUG - STREAM b'IDAT' 41 28064
+2025-06-08 23:10:19,370 - DEBUG - STREAM b'IHDR' 16 13
+2025-06-08 23:10:19,370 - DEBUG - STREAM b'IDAT' 41 28064
+2025-06-08 23:10:19,370 - DEBUG - STREAM b'IHDR' 16 13
+2025-06-08 23:10:19,370 - DEBUG - STREAM b'IDAT' 41 28064
+2025-06-08 23:10:19,371 - DEBUG - Added picture as floating image at top_right: assets/placeholder_slide_4_strategy_workshop_energy_sector.png
+2025-06-08 23:10:19,371 - DEBUG - Starting post-processing for slide (ID: 260)...
+2025-06-08 23:10:19,372 - ERROR - Failed to process or add slide from plan (original index 4, title 'Phase 1: Establishing Credible Transition Hypotheses'): shape is not a placeholder
+2025-06-08 23:10:19,372 - INFO - Processing slide plan for original index 5, current title: 'Phase 2: In-Depth Media Sentiment Analysis' (List length: 15)
+2025-06-08 23:10:19,375 - DEBUG - Added title: Phase 2: In-Depth Media Sentiment Analysis
+2025-06-08 23:10:19,376 - DEBUG - Total estimated lines for 5 bullets: 5
+2025-06-08 23:10:19,376 - INFO - Slide 5 (_add_bullet_content): Estimated total lines for 5 bullets: 5. Max allowed: 15.
+2025-06-08 23:10:19,376 - DEBUG - Slide 5: Content fits single column estimate. Adding all bullets.
+2025-06-08 23:10:19,376 - DEBUG - Slide 5: Applying single-column distribution for 5 bullets.
+2025-06-08 23:10:19,376 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,376 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,376 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,376 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,376 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,378 - DEBUG - STREAM b'IHDR' 16 13
+2025-06-08 23:10:19,378 - DEBUG - STREAM b'IDAT' 41 28555
+2025-06-08 23:10:19,379 - DEBUG - STREAM b'IHDR' 16 13
+2025-06-08 23:10:19,379 - DEBUG - STREAM b'IDAT' 41 28555
+2025-06-08 23:10:19,379 - DEBUG - STREAM b'IHDR' 16 13
+2025-06-08 23:10:19,379 - DEBUG - STREAM b'IDAT' 41 28555
+2025-06-08 23:10:19,379 - DEBUG - Added picture as floating image at top_right: assets/placeholder_slide_5_media_analysis_energy_companies.png
+2025-06-08 23:10:19,379 - DEBUG - Starting post-processing for slide (ID: 261)...
+2025-06-08 23:10:19,379 - ERROR - Failed to process or add slide from plan (original index 5, title 'Phase 2: In-Depth Media Sentiment Analysis'): shape is not a placeholder
+2025-06-08 23:10:19,379 - INFO - Processing slide plan for original index 6, current title: 'Comparative Media Influence & Opportunity Mapping' (List length: 15)
+2025-06-08 23:10:19,381 - DEBUG - Added title: Comparative Media Influence & Opportunity Mapping
+2025-06-08 23:10:19,382 - DEBUG - Total estimated lines for 5 bullets: 9
+2025-06-08 23:10:19,382 - INFO - Slide 6 (_add_bullet_content): Estimated total lines for 5 bullets: 9. Max allowed: 15.
+2025-06-08 23:10:19,382 - DEBUG - Slide 6: Content fits single column estimate. Adding all bullets.
+2025-06-08 23:10:19,382 - DEBUG - Slide 6: Applying single-column distribution for 5 bullets.
+2025-06-08 23:10:19,382 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,382 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,382 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,382 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,382 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,384 - DEBUG - STREAM b'IHDR' 16 13
+2025-06-08 23:10:19,384 - DEBUG - STREAM b'IDAT' 41 27883
+2025-06-08 23:10:19,385 - DEBUG - STREAM b'IHDR' 16 13
+2025-06-08 23:10:19,385 - DEBUG - STREAM b'IDAT' 41 27883
+2025-06-08 23:10:19,385 - DEBUG - STREAM b'IHDR' 16 13
+2025-06-08 23:10:19,385 - DEBUG - STREAM b'IDAT' 41 27883
+2025-06-08 23:10:19,385 - DEBUG - Added picture as floating image at top_right: assets/placeholder_slide_6_media_analysis_energy_companies.png
+2025-06-08 23:10:19,385 - DEBUG - Starting post-processing for slide (ID: 262)...
+2025-06-08 23:10:19,385 - ERROR - Failed to process or add slide from plan (original index 6, title 'Comparative Media Influence & Opportunity Mapping'): shape is not a placeholder
+2025-06-08 23:10:19,385 - INFO - Processing slide plan for original index 7, current title: 'Media Sentiment vs. Public Trust: Energy Sector Analysis' (List length: 15)
+2025-06-08 23:10:19,387 - DEBUG - Added title: Media Sentiment vs. Public Trust: Energy Sector Analysis
+2025-06-08 23:10:19,389 - DEBUG - Total estimated lines for 6 bullets: 7
+2025-06-08 23:10:19,389 - INFO - Slide 7 (_add_bullet_content): Estimated total lines for 6 bullets: 7. Max allowed: 15.
+2025-06-08 23:10:19,389 - DEBUG - Slide 7: Content fits single column estimate. Adding all bullets.
+2025-06-08 23:10:19,389 - DEBUG - Slide 7: Applying single-column distribution for 6 bullets.
+2025-06-08 23:10:19,389 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,390 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,390 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,390 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,390 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,390 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,392 - DEBUG - STREAM b'IHDR' 16 13
+2025-06-08 23:10:19,393 - DEBUG - STREAM b'IDAT' 41 25939
+2025-06-08 23:10:19,394 - DEBUG - STREAM b'IHDR' 16 13
+2025-06-08 23:10:19,394 - DEBUG - STREAM b'IDAT' 41 25939
+2025-06-08 23:10:19,395 - DEBUG - Inserted image into picture placeholder: assets/placeholder_slide_7_sentiment_business_analytics.png
+2025-06-08 23:10:19,395 - DEBUG - Starting post-processing for slide (ID: 263)...
+2025-06-08 23:10:19,397 - DEBUG - Text Placeholder Title 4 (type: title) has text.
+2025-06-08 23:10:19,397 - DEBUG - Placeholder Subtitle 3 (type: center_title) is considered empty (no text).
+2025-06-08 23:10:19,398 - DEBUG - Set center_title placeholder hidden via XML attribute
+2025-06-08 23:10:19,398 - DEBUG - Text Placeholder Text Placeholder 2 (type: body) has text.
+2025-06-08 23:10:19,398 - DEBUG - Placeholder Picture Placeholder 1 (type: picture) contains an image.
+2025-06-08 23:10:19,398 - DEBUG - Post-process: Hid 1 empty placeholders on slide.
+2025-06-08 23:10:19,399 - DEBUG - Finished post-processing for slide (ID: 263).
+2025-06-08 23:10:19,399 - INFO - Processing slide plan for original index 8, current title: 'Eroding Public Trust in Oil & Gas on Climate' (List length: 15)
+2025-06-08 23:10:19,401 - DEBUG - Added title: Eroding Public Trust in Oil & Gas on Climate
+2025-06-08 23:10:19,402 - DEBUG - Total estimated lines for 3 bullets: 3
+2025-06-08 23:10:19,402 - INFO - Slide 8 (_add_bullet_content): Estimated total lines for 3 bullets: 3. Max allowed: 15.
+2025-06-08 23:10:19,402 - DEBUG - Slide 8: Content fits single column estimate. Adding all bullets.
+2025-06-08 23:10:19,402 - DEBUG - Slide 8: Applying single-column distribution for 3 bullets.
+2025-06-08 23:10:19,402 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,402 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,402 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,404 - DEBUG - STREAM b'IHDR' 16 13
+2025-06-08 23:10:19,404 - DEBUG - STREAM b'IDAT' 41 25744
+2025-06-08 23:10:19,404 - DEBUG - STREAM b'IHDR' 16 13
+2025-06-08 23:10:19,404 - DEBUG - STREAM b'IDAT' 41 25744
+2025-06-08 23:10:19,405 - DEBUG - Inserted image into picture placeholder: assets/placeholder_slide_8_sentiment_business_analytics.png
+2025-06-08 23:10:19,405 - DEBUG - Starting post-processing for slide (ID: 264)...
+2025-06-08 23:10:19,406 - DEBUG - Text Placeholder Title 4 (type: title) has text.
+2025-06-08 23:10:19,406 - DEBUG - Placeholder Subtitle 3 (type: center_title) is considered empty (no text).
+2025-06-08 23:10:19,406 - DEBUG - Set center_title placeholder hidden via XML attribute
+2025-06-08 23:10:19,406 - DEBUG - Text Placeholder Text Placeholder 2 (type: body) has text.
+2025-06-08 23:10:19,407 - DEBUG - Placeholder Picture Placeholder 1 (type: picture) contains an image.
+2025-06-08 23:10:19,407 - DEBUG - Post-process: Hid 1 empty placeholders on slide.
+2025-06-08 23:10:19,407 - DEBUG - Finished post-processing for slide (ID: 264).
+2025-06-08 23:10:19,409 - DEBUG - Added speaker notes: This slide highlights the significant decline in p...
+2025-06-08 23:10:19,409 - INFO - Processing slide plan for original index 9, current title: 'Media Sentiment & Public Trust: NGO Assessments' (List length: 15)
+2025-06-08 23:10:19,411 - DEBUG - Added title: Media Sentiment & Public Trust: NGO Assessments
+2025-06-08 23:10:19,412 - DEBUG - Total estimated lines for 6 bullets: 6
+2025-06-08 23:10:19,412 - INFO - Slide 9 (_add_bullet_content): Estimated total lines for 6 bullets: 6. Max allowed: 15.
+2025-06-08 23:10:19,412 - DEBUG - Slide 9: Content fits single column estimate. Adding all bullets.
+2025-06-08 23:10:19,412 - DEBUG - Slide 9: Applying single-column distribution for 6 bullets.
+2025-06-08 23:10:19,412 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,412 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,412 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,413 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,413 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,413 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,414 - DEBUG - STREAM b'IHDR' 16 13
+2025-06-08 23:10:19,414 - DEBUG - STREAM b'IDAT' 41 25906
+2025-06-08 23:10:19,415 - DEBUG - STREAM b'IHDR' 16 13
+2025-06-08 23:10:19,415 - DEBUG - STREAM b'IDAT' 41 25906
+2025-06-08 23:10:19,415 - DEBUG - Inserted image into picture placeholder: assets/placeholder_slide_9_sentiment_business_analytics.png
+2025-06-08 23:10:19,416 - DEBUG - Starting post-processing for slide (ID: 265)...
+2025-06-08 23:10:19,416 - DEBUG - Text Placeholder Title 4 (type: title) has text.
+2025-06-08 23:10:19,417 - DEBUG - Placeholder Subtitle 3 (type: center_title) is considered empty (no text).
+2025-06-08 23:10:19,417 - DEBUG - Set center_title placeholder hidden via XML attribute
+2025-06-08 23:10:19,417 - DEBUG - Text Placeholder Text Placeholder 2 (type: body) has text.
+2025-06-08 23:10:19,417 - DEBUG - Placeholder Picture Placeholder 1 (type: picture) contains an image.
+2025-06-08 23:10:19,417 - DEBUG - Post-process: Hid 1 empty placeholders on slide.
+2025-06-08 23:10:19,417 - DEBUG - Finished post-processing for slide (ID: 265).
+2025-06-08 23:10:19,417 - INFO - Processing slide plan for original index 10, current title: 'Phase 3: In-Depth Qualitative Insights' (List length: 15)
+2025-06-08 23:10:19,419 - DEBUG - Added title: Phase 3: In-Depth Qualitative Insights
+2025-06-08 23:10:19,420 - DEBUG - Total estimated lines for 7 bullets: 7
+2025-06-08 23:10:19,420 - INFO - Slide 10 (_add_bullet_content): Estimated total lines for 7 bullets: 7. Max allowed: 15.
+2025-06-08 23:10:19,420 - DEBUG - Slide 10: Content fits single column estimate. Adding all bullets.
+2025-06-08 23:10:19,420 - DEBUG - Slide 10: Applying single-column distribution for 7 bullets.
+2025-06-08 23:10:19,421 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,421 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,421 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,421 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,421 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,421 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,421 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,423 - DEBUG - STREAM b'IHDR' 16 13
+2025-06-08 23:10:19,423 - DEBUG - STREAM b'IDAT' 41 25409
+2025-06-08 23:10:19,423 - DEBUG - STREAM b'IHDR' 16 13
+2025-06-08 23:10:19,423 - DEBUG - STREAM b'IDAT' 41 25409
+2025-06-08 23:10:19,423 - DEBUG - STREAM b'IHDR' 16 13
+2025-06-08 23:10:19,423 - DEBUG - STREAM b'IDAT' 41 25409
+2025-06-08 23:10:19,423 - DEBUG - Added picture as floating image at top_right: assets/placeholder_slide_10_executive_interviews_focus_groups.png
+2025-06-08 23:10:19,424 - DEBUG - Starting post-processing for slide (ID: 266)...
+2025-06-08 23:10:19,424 - ERROR - Failed to process or add slide from plan (original index 10, title 'Phase 3: In-Depth Qualitative Insights'): shape is not a placeholder
+2025-06-08 23:10:19,424 - INFO - Processing slide plan for original index 11, current title: 'Key Stakeholder Groups & Strategic Research Questions' (List length: 15)
+2025-06-08 23:10:19,426 - DEBUG - Added title: Key Stakeholder Groups & Strategic Research Questions
+2025-06-08 23:10:19,427 - DEBUG - Total estimated lines for 6 bullets: 8
+2025-06-08 23:10:19,427 - INFO - Slide 11 (_add_bullet_content): Estimated total lines for 6 bullets: 8. Max allowed: 15.
+2025-06-08 23:10:19,427 - DEBUG - Slide 11: Content fits single column estimate. Adding all bullets.
+2025-06-08 23:10:19,427 - DEBUG - Slide 11: Applying single-column distribution for 6 bullets.
+2025-06-08 23:10:19,427 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,427 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,427 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,427 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,427 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,427 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,429 - DEBUG - STREAM b'IHDR' 16 13
+2025-06-08 23:10:19,429 - DEBUG - STREAM b'IDAT' 41 25020
+2025-06-08 23:10:19,429 - DEBUG - STREAM b'IHDR' 16 13
+2025-06-08 23:10:19,429 - DEBUG - STREAM b'IDAT' 41 25020
+2025-06-08 23:10:19,430 - DEBUG - Inserted image into picture placeholder: assets/placeholder_slide_11_stakeholder_questions.png
+2025-06-08 23:10:19,430 - DEBUG - Starting post-processing for slide (ID: 267)...
+2025-06-08 23:10:19,431 - DEBUG - Text Placeholder Title 4 (type: title) has text.
+2025-06-08 23:10:19,431 - DEBUG - Placeholder Subtitle 3 (type: center_title) is considered empty (no text).
+2025-06-08 23:10:19,431 - DEBUG - Set center_title placeholder hidden via XML attribute
+2025-06-08 23:10:19,431 - DEBUG - Text Placeholder Text Placeholder 2 (type: body) has text.
+2025-06-08 23:10:19,432 - DEBUG - Placeholder Picture Placeholder 1 (type: picture) contains an image.
+2025-06-08 23:10:19,432 - DEBUG - Post-process: Hid 1 empty placeholders on slide.
+2025-06-08 23:10:19,432 - DEBUG - Finished post-processing for slide (ID: 267).
+2025-06-08 23:10:19,432 - INFO - Processing slide plan for original index 12, current title: 'Comprehensive Analysis & Strategic Benchmarking' (List length: 15)
+2025-06-08 23:10:19,435 - DEBUG - Added title: Comprehensive Analysis & Strategic Benchmarking
+2025-06-08 23:10:19,436 - DEBUG - Total estimated lines for 6 bullets: 7
+2025-06-08 23:10:19,436 - INFO - Slide 12 (_add_bullet_content): Estimated total lines for 6 bullets: 7. Max allowed: 15.
+2025-06-08 23:10:19,436 - DEBUG - Slide 12: Content fits single column estimate. Adding all bullets.
+2025-06-08 23:10:19,436 - DEBUG - Slide 12: Applying single-column distribution for 6 bullets.
+2025-06-08 23:10:19,436 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,436 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,436 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,436 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,436 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,437 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,438 - DEBUG - STREAM b'IHDR' 16 13
+2025-06-08 23:10:19,438 - DEBUG - STREAM b'IDAT' 41 27990
+2025-06-08 23:10:19,438 - DEBUG - STREAM b'IHDR' 16 13
+2025-06-08 23:10:19,438 - DEBUG - STREAM b'IDAT' 41 27990
+2025-06-08 23:10:19,439 - DEBUG - Inserted image into picture placeholder: assets/placeholder_slide_12_benchmarking_energy_companies.png
+2025-06-08 23:10:19,439 - DEBUG - Starting post-processing for slide (ID: 268)...
+2025-06-08 23:10:19,440 - DEBUG - Text Placeholder Title 4 (type: title) has text.
+2025-06-08 23:10:19,440 - DEBUG - Placeholder Subtitle 3 (type: center_title) is considered empty (no text).
+2025-06-08 23:10:19,440 - DEBUG - Set center_title placeholder hidden via XML attribute
+2025-06-08 23:10:19,440 - DEBUG - Text Placeholder Text Placeholder 2 (type: body) has text.
+2025-06-08 23:10:19,441 - DEBUG - Placeholder Picture Placeholder 1 (type: picture) contains an image.
+2025-06-08 23:10:19,441 - DEBUG - Post-process: Hid 1 empty placeholders on slide.
+2025-06-08 23:10:19,441 - DEBUG - Finished post-processing for slide (ID: 268).
+2025-06-08 23:10:19,441 - INFO - Processing slide plan for original index 13, current title: 'BP 2023 Investment Mix: Balancing Energy Transition' (List length: 15)
+2025-06-08 23:10:19,443 - DEBUG - Added title: BP 2023 Investment Mix: Balancing Energy Transition
+2025-06-08 23:10:19,444 - DEBUG - Total estimated lines for 6 bullets: 6
+2025-06-08 23:10:19,444 - INFO - Slide 13 (_add_bullet_content): Estimated total lines for 6 bullets: 6. Max allowed: 15.
+2025-06-08 23:10:19,444 - DEBUG - Slide 13: Content fits single column estimate. Adding all bullets.
+2025-06-08 23:10:19,444 - DEBUG - Slide 13: Applying single-column distribution for 6 bullets.
+2025-06-08 23:10:19,444 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,444 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,444 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,444 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,444 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,445 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,446 - DEBUG - STREAM b'IHDR' 16 13
+2025-06-08 23:10:19,446 - DEBUG - STREAM b'IDAT' 41 24844
+2025-06-08 23:10:19,446 - DEBUG - STREAM b'IHDR' 16 13
+2025-06-08 23:10:19,446 - DEBUG - STREAM b'IDAT' 41 24844
+2025-06-08 23:10:19,447 - DEBUG - Inserted image into picture placeholder: assets/placeholder_slide_13_investment_business_analytics.png
+2025-06-08 23:10:19,447 - DEBUG - Starting post-processing for slide (ID: 269)...
+2025-06-08 23:10:19,447 - DEBUG - Text Placeholder Title 4 (type: title) has text.
+2025-06-08 23:10:19,448 - DEBUG - Placeholder Subtitle 3 (type: center_title) is considered empty (no text).
+2025-06-08 23:10:19,448 - DEBUG - Set center_title placeholder hidden via XML attribute
+2025-06-08 23:10:19,449 - DEBUG - Text Placeholder Text Placeholder 2 (type: body) has text.
+2025-06-08 23:10:19,449 - DEBUG - Placeholder Picture Placeholder 1 (type: picture) contains an image.
+2025-06-08 23:10:19,449 - DEBUG - Post-process: Hid 1 empty placeholders on slide.
+2025-06-08 23:10:19,449 - DEBUG - Finished post-processing for slide (ID: 269).
+2025-06-08 23:10:19,449 - INFO - Processing slide plan for original index 14, current title: 'Comprehensive Reporting & Strategic Next Steps' (List length: 15)
+2025-06-08 23:10:19,451 - DEBUG - Added title: Comprehensive Reporting & Strategic Next Steps
+2025-06-08 23:10:19,452 - DEBUG - Total estimated lines for 7 bullets: 7
+2025-06-08 23:10:19,452 - INFO - Slide 14 (_add_bullet_content): Estimated total lines for 7 bullets: 7. Max allowed: 15.
+2025-06-08 23:10:19,452 - DEBUG - Slide 14: Content fits single column estimate. Adding all bullets.
+2025-06-08 23:10:19,452 - DEBUG - Slide 14: Applying single-column distribution for 7 bullets.
+2025-06-08 23:10:19,453 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,453 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,453 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,453 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,453 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,453 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,453 - DEBUG - Applied bullet level 0 with font size 18pt
+2025-06-08 23:10:19,454 - DEBUG - STREAM b'IHDR' 16 13
+2025-06-08 23:10:19,454 - DEBUG - STREAM b'IDAT' 41 25623
+2025-06-08 23:10:19,455 - DEBUG - STREAM b'IHDR' 16 13
+2025-06-08 23:10:19,455 - DEBUG - STREAM b'IDAT' 41 25623
+2025-06-08 23:10:19,455 - DEBUG - STREAM b'IHDR' 16 13
+2025-06-08 23:10:19,455 - DEBUG - STREAM b'IDAT' 41 25623
+2025-06-08 23:10:19,455 - DEBUG - Added picture as floating image at top_right: assets/placeholder_slide_14_business_reporting_presentation.png
+2025-06-08 23:10:19,455 - DEBUG - Starting post-processing for slide (ID: 270)...
+2025-06-08 23:10:19,456 - ERROR - Failed to process or add slide from plan (original index 14, title 'Comprehensive Reporting & Strategic Next Steps'): shape is not a placeholder
+2025-06-08 23:10:19,456 - DEBUG - Applied presentation metadata
+2025-06-08 23:10:19,456 - INFO - Starting presentation style validation for language: en. Mode: lenient.
+2025-06-08 23:10:19,456 - DEBUG - Performing rule-based style checks...
+2025-06-08 23:10:19,456 - DEBUG - Failed to validate shape in slide 0: 'Slide' object has no attribute 'parent'
+2025-06-08 23:10:19,456 - DEBUG - Failed to validate shape in slide 0: 'Slide' object has no attribute 'parent'
+2025-06-08 23:10:19,456 - DEBUG - Failed to validate shape in slide 0: 'Slide' object has no attribute 'parent'
+2025-06-08 23:10:19,457 - DEBUG - Failed to validate shape in slide 1: 'Slide' object has no attribute 'parent'
+2025-06-08 23:10:19,457 - DEBUG - Failed to validate shape in slide 1: 'Slide' object has no attribute 'parent'
+2025-06-08 23:10:19,457 - DEBUG - Failed to validate shape in slide 1: 'Slide' object has no attribute 'parent'
+2025-06-08 23:10:19,457 - DEBUG - Failed to validate shape in slide 1: 'Slide' object has no attribute 'parent'
+2025-06-08 23:10:19,458 - DEBUG - Failed to validate shape in slide 2: 'Slide' object has no attribute 'parent'
+2025-06-08 23:10:19,458 - DEBUG - Failed to validate shape in slide 2: 'Slide' object has no attribute 'parent'
+2025-06-08 23:10:19,458 - DEBUG - Failed to validate shape in slide 2: 'Slide' object has no attribute 'parent'
+2025-06-08 23:10:19,459 - DEBUG - Failed to validate shape in slide 3: 'Slide' object has no attribute 'parent'
+2025-06-08 23:10:19,459 - DEBUG - Failed to validate shape in slide 3: 'Slide' object has no attribute 'parent'
+2025-06-08 23:10:19,459 - DEBUG - Failed to validate shape in slide 3: 'Slide' object has no attribute 'parent'
+2025-06-08 23:10:19,459 - DEBUG - Failed to validate shape in slide 3: 'Slide' object has no attribute 'parent'
+2025-06-08 23:10:19,460 - DEBUG - Failed to validate shape in slide 4: 'Slide' object has no attribute 'parent'
+2025-06-08 23:10:19,460 - DEBUG - Failed to validate shape in slide 4: 'Slide' object has no attribute 'parent'
+2025-06-08 23:10:19,460 - DEBUG - Failed to validate shape in slide 4: 'Slide' object has no attribute 'parent'
+2025-06-08 23:10:19,460 - DEBUG - Failed to validate shape in slide 4: 'Slide' object has no attribute 'parent'
+2025-06-08 23:10:19,461 - DEBUG - Failed to validate shape in slide 5: 'Slide' object has no attribute 'parent'
+2025-06-08 23:10:19,461 - DEBUG - Failed to validate shape in slide 5: 'Slide' object has no attribute 'parent'
+2025-06-08 23:10:19,461 - DEBUG - Failed to validate shape in slide 5: 'Slide' object has no attribute 'parent'
+2025-06-08 23:10:19,461 - DEBUG - Failed to validate shape in slide 5: 'Slide' object has no attribute 'parent'
+2025-06-08 23:10:19,461 - DEBUG - Failed to validate shape in slide 6: 'Slide' object has no attribute 'parent'
+2025-06-08 23:10:19,462 - DEBUG - Failed to validate shape in slide 6: 'Slide' object has no attribute 'parent'
+2025-06-08 23:10:19,462 - DEBUG - Failed to validate shape in slide 6: 'Slide' object has no attribute 'parent'
+2025-06-08 23:10:19,462 - DEBUG - Failed to validate shape in slide 6: 'Slide' object has no attribute 'parent'
+2025-06-08 23:10:19,463 - DEBUG - Failed to validate shape in slide 7: 'Slide' object has no attribute 'parent'
+2025-06-08 23:10:19,464 - DEBUG - Failed to validate shape in slide 7: 'Slide' object has no attribute 'parent'
+2025-06-08 23:10:19,464 - DEBUG - Failed to validate shape in slide 7: 'Slide' object has no attribute 'parent'
+2025-06-08 23:10:19,464 - DEBUG - Failed to validate shape in slide 7: 'Slide' object has no attribute 'parent'
+2025-06-08 23:10:19,465 - DEBUG - Failed to validate shape in slide 8: 'Slide' object has no attribute 'parent'
+2025-06-08 23:10:19,465 - DEBUG - Failed to validate shape in slide 8: 'Slide' object has no attribute 'parent'
+2025-06-08 23:10:19,466 - DEBUG - Failed to validate shape in slide 8: 'Slide' object has no attribute 'parent'
+2025-06-08 23:10:19,466 - DEBUG - Failed to validate shape in slide 8: 'Slide' object has no attribute 'parent'
+2025-06-08 23:10:19,467 - DEBUG - Failed to validate shape in slide 9: 'Slide' object has no attribute 'parent'
+2025-06-08 23:10:19,468 - DEBUG - Failed to validate shape in slide 9: 'Slide' object has no attribute 'parent'
+⠙ 🔧 Assembling PowerPoint...2025-06-08 23:10:19,469 - DEBUG - Failed to validate shape in slide 9: 'Slide' object has no attribute 'parent'
+2025-06-08 23:10:19,469 - DEBUG - Failed to validate shape in slide 9: 'Slide' object has no attribute 'parent'
+2025-06-08 23:10:19,470 - DEBUG - Failed to validate shape in slide 10: 'Slide' object has no attribute 'parent'
+2025-06-08 23:10:19,470 - DEBUG - Failed to validate shape in slide 10: 'Slide' object has no attribute 'parent'
+2025-06-08 23:10:19,471 - DEBUG - Failed to validate shape in slide 10: 'Slide' object has no attribute 'parent'
+2025-06-08 23:10:19,471 - DEBUG - Failed to validate shape in slide 10: 'Slide' object has no attribute 'parent'
+2025-06-08 23:10:19,471 - DEBUG - Failed to validate shape in slide 11: 'Slide' object has no attribute 'parent'
+2025-06-08 23:10:19,472 - DEBUG - Failed to validate shape in slide 11: 'Slide' object has no attribute 'parent'
+2025-06-08 23:10:19,472 - DEBUG - Failed to validate shape in slide 11: 'Slide' object has no attribute 'parent'
+2025-06-08 23:10:19,472 - DEBUG - Failed to validate shape in slide 11: 'Slide' object has no attribute 'parent'
+2025-06-08 23:10:19,472 - DEBUG - Failed to validate shape in slide 12: 'Slide' object has no attribute 'parent'
+2025-06-08 23:10:19,473 - DEBUG - Failed to validate shape in slide 12: 'Slide' object has no attribute 'parent'
+2025-06-08 23:10:19,473 - DEBUG - Failed to validate shape in slide 12: 'Slide' object has no attribute 'parent'
+2025-06-08 23:10:19,473 - DEBUG - Failed to validate shape in slide 12: 'Slide' object has no attribute 'parent'
+2025-06-08 23:10:19,473 - DEBUG - Failed to validate shape in slide 13: 'Slide' object has no attribute 'parent'
+2025-06-08 23:10:19,474 - DEBUG - Failed to validate shape in slide 13: 'Slide' object has no attribute 'parent'
+2025-06-08 23:10:19,474 - DEBUG - Failed to validate shape in slide 13: 'Slide' object has no attribute 'parent'
+2025-06-08 23:10:19,474 - DEBUG - Failed to validate shape in slide 13: 'Slide' object has no attribute 'parent'
+2025-06-08 23:10:19,474 - DEBUG - Failed to validate shape in slide 14: 'Slide' object has no attribute 'parent'
+2025-06-08 23:10:19,475 - DEBUG - Failed to validate shape in slide 14: 'Slide' object has no attribute 'parent'
+2025-06-08 23:10:19,475 - DEBUG - Failed to validate shape in slide 14: 'Slide' object has no attribute 'parent'
+2025-06-08 23:10:19,475 - DEBUG - Failed to validate shape in slide 14: 'Slide' object has no attribute 'parent'
+2025-06-08 23:10:19,475 - DEBUG - Completed rule-based checks. 58 feedback items generated so far.
+2025-06-08 23:10:19,475 - DEBUG - VisualProofreader is not enabled or not initialized, skipping LLM-based checks.
+2025-06-08 23:10:19,476 - INFO - Total feedback items generated: 58.
+2025-06-08 23:10:19,476 - WARNING - Style validation found 58 feedback items (lenient mode):
+2025-06-08 23:10:19,476 - WARNING -   - Slide 1: [shape_validation_error/medium] Error validating shape 2 on slide 1: 'Slide' object has no attribute 'parent' (Suggestion: Check shape properties or content.)
+2025-06-08 23:10:19,476 - WARNING -   - Slide 1: [shape_validation_error/medium] Error validating shape 3 on slide 1: 'Slide' object has no attribute 'parent' (Suggestion: Check shape properties or content.)
+2025-06-08 23:10:19,476 - WARNING -   - Slide 1: [shape_validation_error/medium] Error validating shape 4 on slide 1: 'Slide' object has no attribute 'parent' (Suggestion: Check shape properties or content.)
+2025-06-08 23:10:19,476 - WARNING -   - Slide 2: [shape_validation_error/medium] Error validating shape 2 on slide 2: 'Slide' object has no attribute 'parent' (Suggestion: Check shape properties or content.)
+2025-06-08 23:10:19,476 - WARNING -   - Slide 2: [shape_validation_error/medium] Error validating shape 3 on slide 2: 'Slide' object has no attribute 'parent' (Suggestion: Check shape properties or content.)
+2025-06-08 23:10:19,476 - WARNING -   - Slide 2: [shape_validation_error/medium] Error validating shape 4 on slide 2: 'Slide' object has no attribute 'parent' (Suggestion: Check shape properties or content.)
+2025-06-08 23:10:19,476 - WARNING -   - Slide 2: [shape_validation_error/medium] Error validating shape 5 on slide 2: 'Slide' object has no attribute 'parent' (Suggestion: Check shape properties or content.)
+2025-06-08 23:10:19,476 - WARNING -   - Slide 3: [shape_validation_error/medium] Error validating shape 2 on slide 3: 'Slide' object has no attribute 'parent' (Suggestion: Check shape properties or content.)
+2025-06-08 23:10:19,476 - WARNING -   - Slide 3: [shape_validation_error/medium] Error validating shape 3 on slide 3: 'Slide' object has no attribute 'parent' (Suggestion: Check shape properties or content.)
+2025-06-08 23:10:19,476 - WARNING -   - Slide 3: [shape_validation_error/medium] Error validating shape 4 on slide 3: 'Slide' object has no attribute 'parent' (Suggestion: Check shape properties or content.)
+2025-06-08 23:10:19,476 - WARNING -   ... and 48 more feedback items (not shown in detail).
+⠹ 🔧 Assembling PowerPoint...2025-06-08 23:10:19,582 - INFO - Successfully assembled presentation: strategy-deck.pptx
+✅ Assembled presentation: strategy-deck.pptx
+
+
+🎉 Generation Complete!
+             Presentation Summary             
+┏━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━┓
+┃ Metric                ┃ Value              ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━┩
+│ Output File           │ strategy-deck.pptx │
+│ Total Slides          │ 15                 │
+│ Total Bullets         │ 59                 │
+│ Total Words           │ 568                │
+│ Charts Generated      │ 5                  │
+│ Images Sourced        │ 13                 │
+│ Review Score          │ 0/10               │
+│ Feedback Items        │ 10                 │
+│ Refinement Iterations │ 3                  │
+│ Quality Gates         │ 3/7 passed         │
+│ Final Status          │ Needs_Fix          │
+└───────────────────────┴────────────────────┘
+
+📝 Review Feedback (10 items)
+1. HIGH (Slide General): Transitions between phases and sections are not clearly indicated, which may cause confusion about the progression of the 
+assessment.
+   💡 Add brief transition slides or section headers to clearly delineate the phases and signal shifts in focus to the audience.
+2. HIGH (Slide 1): The title slide repeats the same phrase twice in the bullet points, which is redundant and does not provide any additional context.
+   💡 Remove the duplicate bullet points and consider adding a brief subtitle or tagline that sets the stage for the presentation’s purpose.
+3. HIGH (Slide 10): The slide presents a critical data point (14% trust) but lacks context or visual emphasis, which may reduce its impact.
+   💡 Highlight the 14% figure visually (e.g., bold text, callout, or chart) and briefly explain its significance for BP’s strategy.
+4. MEDIUM (Slide General): The overall narrative could be strengthened by more explicitly tying each phase and analysis back to the overarching 
+objectives.
+   💡 At the end of each phase, briefly summarize how findings support the main objectives and inform subsequent steps.
+5. MEDIUM (Slide 8): The slide title and bullet points may not clearly explain the relationship between media influence and opportunity mapping.
+   💡 Clarify the connection in the slide title and ensure bullet points explicitly state how media influence is mapped to opportunities for BP.
+   ... and 5 more items
