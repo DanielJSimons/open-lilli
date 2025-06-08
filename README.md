@@ -99,8 +99,8 @@ ai-ppt generate \
 
 # With review and auto-refinement
 ai-ppt generate \
-  --template templates/corporate.pptx \
-  --input content/strategy-doc.md \
+  --template templates/BrunswickTemplate.pptx \
+  --input content/final_proposal.md \
   --output strategy-deck.pptx \
   --auto-refine \
   --max-iterations 3 \

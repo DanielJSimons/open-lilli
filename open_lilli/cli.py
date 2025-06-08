@@ -567,7 +567,7 @@ def generate(ctx: click.Context,
 )
 @click.option(
     "--model",
-    default="gpt-4.1",
+    default="gpt4.1",
     help="OpenAI model to use"
 )
 @click.option(
@@ -794,7 +794,7 @@ def analyze_template(ctx: click.Context, template_path: Path):
 @click.argument("presentation_path", type=click.Path(exists=True, path_type=Path))
 @click.option(
     "--model",
-    default="gpt-4.1",
+    default="gpt4.1",
     help="OpenAI model to use for review"
 )
 def review(presentation_path: Path, model: str):
@@ -822,6 +822,7 @@ def setup():
         console.print("📝 Creating .env file...")
         env_content = """# OpenAI API Configuration
 OPENAI_API_KEY=your_openai_api_key_here
+OPENAI_MODEL=gpt-4.1
 OPENAI_MODEL=gpt-4.1
 OPENAI_TEMPERATURE=0.3
 
@@ -1055,7 +1056,7 @@ def ingest(ctx: click.Context,
 )
 @click.option(
     "--model",
-    default="gpt-4.1",
+    default="gpt4.1",
     help="OpenAI model to use for proofreading"
 )
 @click.option(
@@ -1331,7 +1332,7 @@ def proofread(ctx: click.Context,
 )
 @click.option(
     "--model",
-    default="gpt-4.1",
+    default="gpt4.1",
     help="OpenAI model to use for flow analysis"
 )
 @click.option(
@@ -1574,7 +1575,7 @@ def analyze_flow(ctx: click.Context,
 )
 @click.option(
     "--model",
-    default="gpt-4.1",
+    default="gpt4.1",
     help="OpenAI model to use for content enhancement"
 )
 @click.option(
