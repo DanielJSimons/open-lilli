@@ -788,12 +788,13 @@ class SmartContentFitter:
             return 0
         
         bullets_moved = 0
-        max_moves = min(len(source_slide.bullets), 3)  # Limit moves per pass
+        max_moves = 3  # Limit moves per pass (absolute maximum)
         
         # Try moving bullets one by one
-        for _ in range(max_moves):
-            # Calculate if moving one bullet would help
+        for move_attempt in range(max_moves):
+            # Check if we still have bullets to move (list shrinks as we move bullets)
             if not source_slide.bullets:
+                logger.debug(f"Source slide {source_slide.index} has no more bullets after {move_attempt} moves")
                 break
                 
             # Create test scenarios
@@ -827,8 +828,10 @@ class SmartContentFitter:
                 # Apply the move to actual slides
                 # Safety check: ensure source_slide still has bullets to pop
                 if not source_slide.bullets:
+                    logger.debug(f"Source slide {source_slide.index} became empty before actual move, breaking")
                     break
                     
+                logger.debug(f"About to move bullet from slide {source_slide.index} (has {len(source_slide.bullets)} bullets) to slide {target_slide.index}")
                 moved_bullet = source_slide.bullets.pop()
                 target_slide.bullets.append(moved_bullet)
                 bullets_moved += 1
