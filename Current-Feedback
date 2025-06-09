@@ -1,191 +1,46 @@
-⠧ 📋 Planning slide layouts...2025-06-09 22:03:47,460 - DEBUG - receive_response_body.complete
-2025-06-09 22:03:47,460 - DEBUG - response_closed.started
-2025-06-09 22:03:47,460 - DEBUG - response_closed.complete
-2025-06-09 22:03:47,460 - DEBUG - HTTP Response: POST https://api.openai.com/v1/chat/completions "200 OK" Headers({'date': 'Mon, 09 Jun 2025 21:03:47 GMT', 'content-type': 'application/json', 'transfer-encoding': 'chunked', 'connection': 'keep-alive', 'access-control-expose-headers': 'X-Request-ID', 'openai-organization': 'brunswick-group-9kojjv', 'openai-processing-ms': '518', 'openai-version': '2020-10-01', 'x-envoy-upstream-service-time': '562', 'x-ratelimit-limit-requests': '10000', 'x-ratelimit-limit-tokens': '2000000', 'x-ratelimit-remaining-requests': '9999', 'x-ratelimit-remaining-tokens': '1999434', 'x-ratelimit-reset-requests': '6ms', 'x-ratelimit-reset-tokens': '16ms', 'x-request-id': 'req_43f42604970394793b2062a09cb5d347', 'strict-transport-security': 'max-age=31536000; includeSubDomains; preload', 'cf-cache-status': 'DYNAMIC', 'x-content-type-options': 'nosniff', 'server': 'cloudflare', 'cf-ray': '94d393dcb9bc37b6-LHR', 'content-encoding': 'gzip', 'alt-svc': 'h3=":443"; ma=86400'})
-2025-06-09 22:03:47,461 - DEBUG - request_id: req_43f42604970394793b2062a09cb5d347
-2025-06-09 22:03:47,462 - INFO - LLM selected layout 'Heading, subtitle & content ' (index 27) for slide: 'Six Evidence-Led Objectives'
-2025-06-09 22:03:47,462 - DEBUG - Layout 0: Found real name 'Title Slide'
-2025-06-09 22:03:47,462 - DEBUG - Layout 1: Found real name 'Title | One Line | Soft Blue'
-2025-06-09 22:03:47,462 - DEBUG - Layout 2: Found real name 'Title | One Line | Soft White'
-2025-06-09 22:03:47,462 - DEBUG - Layout 3: Found real name 'Title | Frame | Soft Blue'
-2025-06-09 22:03:47,462 - DEBUG - Layout 4: Found real name 'Title | Frame | Soft White'
-2025-06-09 22:03:47,462 - DEBUG - Layout 5: Found real name 'Title Slide_Image'
-2025-06-09 22:03:47,463 - DEBUG - Layout 6: Found real name 'Title Slide_Image 2'
-2025-06-09 22:03:47,463 - DEBUG - Layout 7: Found real name 'Agenda'
-2025-06-09 22:03:47,463 - DEBUG - Layout 8: Found real name 'Agenda | Left'
-2025-06-09 22:03:47,463 - DEBUG - Layout 9: Found real name 'Divider | Large Text | Light Blue'
-2025-06-09 22:03:47,463 - DEBUG - Layout 10: Found real name '1_Section divider 1'
-2025-06-09 22:03:47,463 - DEBUG - Layout 11: Found real name 'Section divider 1'
-2025-06-09 22:03:47,463 - DEBUG - Layout 12: Found real name 'Callout slide 1'
-2025-06-09 22:03:47,463 - DEBUG - Layout 13: Found real name 'Break | Title+Eyebrow | Soft White'
-2025-06-09 22:03:47,464 - DEBUG - Layout 14: Found real name 'Callout slide 2'
-2025-06-09 22:03:47,464 - DEBUG - Layout 15: Found real name 'Break | Eyebrow+Copy | Brunswick Blue'
-2025-06-09 22:03:47,464 - DEBUG - Layout 16: Found real name 'Break | Eyebrow+Copy | Soft Blue'
-2025-06-09 22:03:47,464 - DEBUG - Layout 17: Found real name 'Break | Eyebrow+Copy | Soft White'
-2025-06-09 22:03:47,464 - DEBUG - Layout 18: Found real name 'Break | Title+Copy | Soft White'
-2025-06-09 22:03:47,464 - DEBUG - Layout 19: Found real name 'Team | 1 Person'
-2025-06-09 22:03:47,464 - DEBUG - Layout 20: Found real name 'Team | 3 People'
-2025-06-09 22:03:47,464 - DEBUG - Layout 21: Found real name 'Team | 3 People | Bios'
-2025-06-09 22:03:47,465 - DEBUG - Layout 22: Found real name 'Team | 4 People'
-2025-06-09 22:03:47,465 - DEBUG - Layout 23: Found real name 'Team | 6 People'
-2025-06-09 22:03:47,465 - DEBUG - Layout 24: Found real name 'Team | 6 People | Bios'
-2025-06-09 22:03:47,465 - DEBUG - Layout 25: Found real name 'Team | 12 People'
-2025-06-09 22:03:47,465 - DEBUG - Layout 26: Found real name 'Team slide 4 profiles'
-2025-06-09 22:03:47,465 - DEBUG - Layout 27: Found real name 'Heading, subtitle & content '
-2025-06-09 22:03:47,465 - DEBUG - Layout 28: Found real name 'Heading and subtitle'
-2025-06-09 22:03:47,465 - DEBUG - Layout 29: Found real name 'Heading and subtitle (option)'
-2025-06-09 22:03:47,466 - DEBUG - Layout 30: Found real name 'Info | Title+2 Sections'
-2025-06-09 22:03:47,466 - DEBUG - Layout 31: Found real name 'Info | Title+3 Sections'
-2025-06-09 22:03:47,466 - DEBUG - Layout 32: Found real name 'Info | Title+4 Sections'
-2025-06-09 22:03:47,466 - DEBUG - Layout 33: Found real name 'Single quote + picture'
-2025-06-09 22:03:47,466 - DEBUG - Layout 34: Found real name 'Key message slide 1'
-2025-06-09 22:03:47,467 - DEBUG - Layout 35: Found real name 'Key message slide 2'
-2025-06-09 22:03:47,467 - DEBUG - Layout 36: Found real name 'Info | Title+Content+Callout'
-2025-06-09 22:03:47,467 - DEBUG - Layout 37: Found real name 'Bowtie (basic)'
-2025-06-09 22:03:47,468 - DEBUG - Layout 38: Found real name 'Bowtie (with labels)'
-2025-06-09 22:03:47,468 - DEBUG - Layout 39: Found real name 'Bowtie'
-2025-06-09 22:03:47,468 - DEBUG - Layout 40: Found real name 'Case study slide 1'
-2025-06-09 22:03:47,468 - DEBUG - Layout 41: Found real name 'Case study slide 2'
-2025-06-09 22:03:47,468 - DEBUG - Layout 42: Found real name 'Circles slide'
-2025-06-09 22:03:47,468 - DEBUG - Layout 43: Found real name 'Map'
-2025-06-09 22:03:47,469 - DEBUG - Layout 44: Found real name 'Corporate boiler plate'
-2025-06-09 22:03:47,469 - DEBUG - Layout 45: Found real name 'Business critical'
-2025-06-09 22:03:47,469 - DEBUG - Layout 46: Found real name 'Final brand slide'
-2025-06-09 22:03:47,470 - DEBUG - Layout 47: Found real name 'Monogram Pattern'
-2025-06-09 22:03:47,470 - DEBUG - Layout 48: Found real name 'Final brand slide links'
-2025-06-09 22:03:47,470 - DEBUG - Layout 49: Found real name 'Blank | Soft Blue'
-2025-06-09 22:03:47,470 - DEBUG - Layout 50: Found real name 'Blank'
-2025-06-09 22:03:47,470 - DEBUG - Layout 51: Found real name 'Blank | White'
-2025-06-09 22:03:47,470 - DEBUG - Layout 52: Found real name 'Blank | Brunswick Blue'
-2025-06-09 22:03:47,470 - DEBUG - Layout 53: Found real name '1_Design only - do not use'
-2025-06-09 22:03:47,479 - DEBUG - Could not extract visual properties: fill type _NoFill has no foreground color, call .solid() or .patterned() first
-2025-06-09 22:03:47,479 - WARNING - Error extracting shapes: shape is not a placeholder
-2025-06-09 22:03:47,481 - DEBUG - Grid detection failed: shape is not a placeholder
-2025-06-09 22:03:47,482 - ERROR - Failed to extract visual data for layout 27: 'TemplateParser' object has no attribute '_identify_content_zones'
-2025-06-09 22:03:47,483 - DEBUG - Request options: {'method': 'post', 'url': '/chat/completions', 'files': None, 'idempotency_key': 'stainless-python-retry-ccf69202-ef70-46ce-9a3e-d0d389115235', 'json_data': {'messages': [{'role': 'system', 'content': 'You are an expert presentation template analyst who understands layout design intent. Analyze template layouts to determine their intended content structure and purpose. Focus on what content each placeholder expects and how they relate to each other.'}, {'role': 'user', 'content': "Analyze this PowerPoint template layout to understand its design intent and content expectations.\n\nTEMPLATE LAYOUT:\nLAYOUT INDEX: 27\n\nANALYSIS REQUIRED:\n1. PRIMARY PURPOSE: What is this layout designed to communicate? (e.g., comparison, process, showcase, overview)\n2. PLACEHOLDER EXPECTATIONS: What specific content should go in each placeholder type?\n3. CONTENT RELATIONSHIPS: How should content areas relate to each other?\n4. VISUAL HIERARCHY: What's the intended information flow and emphasis?\n5. CONTENT STRUCTURE: How should content be organized to match this template's design?\n\nIMPORTANT: Focus on the template's INTENT, not just what it CAN contain. What was this layout specifically designed for?\n\nRespond in this format:\nPRIMARY_PURPOSE: [main communication goal]\nTITLE_EXPECTATION: [what the title should communicate]\nSUBTILE_EXPECTATION: [what subtitle should contain, if present]\nCONTENT_EXPECTATION: [how main content should be structured]\nIMAGE_EXPECTATION: [what images should support, if present]\nCONTENT_RELATIONSHIPS: [how content areas should relate]\nVISUAL_HIERARCHY: [intended information flow]\nCONTENT_STRUCTURE: [recommended organization approach]"}], 'model': 'gpt-4o', 'max_tokens': 500, 'temperature': 0.1}}
-2025-06-09 22:03:47,484 - DEBUG - Sending HTTP Request: POST https://api.openai.com/v1/chat/completions
-2025-06-09 22:03:47,485 - DEBUG - send_request_headers.started request=<Request [b'POST']>
-2025-06-09 22:03:47,485 - DEBUG - send_request_headers.complete
-2025-06-09 22:03:47,485 - DEBUG - send_request_body.started request=<Request [b'POST']>
-2025-06-09 22:03:47,486 - DEBUG - send_request_body.complete
-2025-06-09 22:03:47,486 - DEBUG - receive_response_headers.started request=<Request [b'POST']>
-⠏ 📋 Planning slide layouts...2025-06-09 22:03:56,498 - DEBUG - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Mon, 09 Jun 2025 21:03:56 GMT'), (b'Content-Type', b'application/json'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'access-control-expose-headers', b'X-Request-ID'), (b'openai-organization', b'brunswick-group-9kojjv'), (b'openai-processing-ms', b'9249'), (b'openai-version', b'2020-10-01'), (b'x-envoy-upstream-service-time', b'9259'), (b'x-ratelimit-limit-requests', b'10000'), (b'x-ratelimit-limit-tokens', b'2000000'), (b'x-ratelimit-remaining-requests', b'9999'), (b'x-ratelimit-remaining-tokens', b'1999640'), (b'x-ratelimit-reset-requests', b'6ms'), (b'x-ratelimit-reset-tokens', b'10ms'), (b'x-request-id', b'req_9d742b273319a8d9661d8db0cded20c7'), (b'strict-transport-security', b'max-age=31536000; includeSubDomains; preload'), (b'cf-cache-status', b'DYNAMIC'), (b'X-Content-Type-Options', b'nosniff'), (b'Server', b'cloudflare'), (b'CF-RAY', b'94d393e1cc3437b6-LHR'), (b'Content-Encoding', b'gzip'), (b'alt-svc', b'h3=":443"; ma=86400')])
-2025-06-09 22:03:56,498 - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
-2025-06-09 22:03:56,499 - DEBUG - receive_response_body.started request=<Request [b'POST']>
-⠋ 📋 Planning slide layouts...2025-06-09 22:03:56,508 - DEBUG - receive_response_body.complete
-2025-06-09 22:03:56,508 - DEBUG - response_closed.started
-2025-06-09 22:03:56,508 - DEBUG - response_closed.complete
-2025-06-09 22:03:56,508 - DEBUG - HTTP Response: POST https://api.openai.com/v1/chat/completions "200 OK" Headers({'date': 'Mon, 09 Jun 2025 21:03:56 GMT', 'content-type': 'application/json', 'transfer-encoding': 'chunked', 'connection': 'keep-alive', 'access-control-expose-headers': 'X-Request-ID', 'openai-organization': 'brunswick-group-9kojjv', 'openai-processing-ms': '9249', 'openai-version': '2020-10-01', 'x-envoy-upstream-service-time': '9259', 'x-ratelimit-limit-requests': '10000', 'x-ratelimit-limit-tokens': '2000000', 'x-ratelimit-remaining-requests': '9999', 'x-ratelimit-remaining-tokens': '1999640', 'x-ratelimit-reset-requests': '6ms', 'x-ratelimit-reset-tokens': '10ms', 'x-request-id': 'req_9d742b273319a8d9661d8db0cded20c7', 'strict-transport-security': 'max-age=31536000; includeSubDomains; preload', 'cf-cache-status': 'DYNAMIC', 'x-content-type-options': 'nosniff', 'server': 'cloudflare', 'cf-ray': '94d393e1cc3437b6-LHR', 'content-encoding': 'gzip', 'alt-svc': 'h3=":443"; ma=86400'})
-2025-06-09 22:03:56,508 - DEBUG - request_id: req_9d742b273319a8d9661d8db0cded20c7
-2025-06-09 22:03:56,509 - DEBUG - Analyzed template intent for layout 27: The layout is designed for a "showcase" purpose, likely intended to highlight key features, products, or concepts in a visually engaging manner.
-2025-06-09 22:03:56,511 - DEBUG - Request options: {'method': 'post', 'url': '/chat/completions', 'files': None, 'idempotency_key': 'stainless-python-retry-b424607b-329f-42a6-bd49-4d714f9c2bb4', 'json_data': {'messages': [{'role': 'system', 'content': "You are an expert content strategist who adapts slide content to fit specific template designs. Transform content to match template intent while preserving the core message. Focus on what each placeholder type expects based on the template's design purpose."}, {'role': 'user', 'content': 'Adapt the following slide content to fit this template\'s specific design intent and placeholder expectations.\n\nORIGINAL CONTENT:\nSLIDE TITLE: \'Six Evidence-Led Objectives\'\nSLIDE TYPE: content\nMAIN CONTENT: 5 bullet points\n  • Map stakeholder awareness\n  • Measure BP’s influence & channels\n  • Benchmark credibility vs. peers\n  • Identify high-impact comms & partners\n  • Build ongoing tracking framework\nVISUAL CONTEXT: Expects images (objectives mapping stakeholder engagement)\nSPEAKER NOTES: Emphasise data-driven clarity and long-term monitoring....\n\nTEMPLATE INTENT:\nPrimary Purpose: The layout is designed for a "showcase" purpose, likely intended to highlight key features, products, or concepts in a visually engaging manner.\nContent Structure: Content should be organized in a way that allows for easy navigation and understanding. Start with an introduction (title and subtitle), followed by a series of sections or slides that each focus on a specific feature or element. Each section should include a brief description and a supporting image, ensuring that the viewer can quickly grasp the key points of each showcased item.\nContent Relationships: Content areas should be closely related, with each section building on the previous one to create a cohesive narrative. The text and images should work together to provide a comprehensive view of the showcased items, with each element reinforcing the overall theme.\n\nTEMPLATE PLACEHOLDER EXPECTATIONS:\n• TITLE: If a subtitle is present, it should offer additional context or a brief overview of what will be showcased, setting the stage for the detailed content.\n• CONTENT: The main content should be structured to highlight individual elements or features. This could include bullet points, short descriptions, or key highlights that succinctly convey the most important information about each element being showcased.\n• IMAGE: Images should visually support the content by providing clear, high-quality visuals of the items or concepts being showcased. They should complement the text by offering a visual representation that enhances understanding and engagement.\n\nADAPTATION TASK:\nReshape the content to match what this template expects. Generate appropriate content for each placeholder type based on the template\'s design intent.\n\nIMPORTANT GUIDELINES:\n1. Preserve the core message and key information\n2. Adapt content structure to match template expectations\n3. Generate content specifically for subtitle/footer placeholders if template expects them\n4. Ensure content coherence across all placeholders\n5. Match the template\'s intended communication style\n\nRespond in this format:\nADAPTED_TITLE: [title adapted for this template]\nADAPTED_SUBTITLE: [subtitle if template expects one]\nADAPTED_BULLETS: [bullet points restructured for template]\nADAPTED_FOOTER: [footer content if template expects one]\nADAPTATION_REASONING: [brief explanation of changes made]'}], 'model': 'gpt-4o', 'max_tokens': 800, 'temperature': 0.2}}
-2025-06-09 22:03:56,512 - DEBUG - Sending HTTP Request: POST https://api.openai.com/v1/chat/completions
-2025-06-09 22:03:56,512 - DEBUG - send_request_headers.started request=<Request [b'POST']>
-2025-06-09 22:03:56,512 - DEBUG - send_request_headers.complete
-2025-06-09 22:03:56,513 - DEBUG - send_request_body.started request=<Request [b'POST']>
-2025-06-09 22:03:56,513 - DEBUG - send_request_body.complete
-2025-06-09 22:03:56,513 - DEBUG - receive_response_headers.started request=<Request [b'POST']>
-⠋ 📋 Planning slide layouts...2025-06-09 22:04:00,566 - DEBUG - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Mon, 09 Jun 2025 21:04:01 GMT'), (b'Content-Type', b'application/json'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'access-control-expose-headers', b'X-Request-ID'), (b'openai-organization', b'brunswick-group-9kojjv'), (b'openai-processing-ms', b'3039'), (b'openai-version', b'2020-10-01'), (b'x-envoy-upstream-service-time', b'3995'), (b'x-ratelimit-limit-requests', b'10000'), (b'x-ratelimit-limit-tokens', b'2000000'), (b'x-ratelimit-remaining-requests', b'9999'), (b'x-ratelimit-remaining-tokens', b'1999196'), (b'x-ratelimit-reset-requests', b'6ms'), (b'x-ratelimit-reset-tokens', b'24ms'), (b'x-request-id', b'req_cf3a0c95ac328d54d8855a3a89e55897'), (b'strict-transport-security', b'max-age=31536000; includeSubDomains; preload'), (b'cf-cache-status', b'DYNAMIC'), (b'X-Content-Type-Options', b'nosniff'), (b'Server', b'cloudflare'), (b'CF-RAY', b'94d3941ce92137b6-LHR'), (b'Content-Encoding', b'gzip'), (b'alt-svc', b'h3=":443"; ma=86400')])
-2025-06-09 22:04:00,567 - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
-2025-06-09 22:04:00,567 - DEBUG - receive_response_body.started request=<Request [b'POST']>
-2025-06-09 22:04:00,568 - DEBUG - receive_response_body.complete
-2025-06-09 22:04:00,568 - DEBUG - response_closed.started
-2025-06-09 22:04:00,568 - DEBUG - response_closed.complete
-2025-06-09 22:04:00,568 - DEBUG - HTTP Response: POST https://api.openai.com/v1/chat/completions "200 OK" Headers({'date': 'Mon, 09 Jun 2025 21:04:01 GMT', 'content-type': 'application/json', 'transfer-encoding': 'chunked', 'connection': 'keep-alive', 'access-control-expose-headers': 'X-Request-ID', 'openai-organization': 'brunswick-group-9kojjv', 'openai-processing-ms': '3039', 'openai-version': '2020-10-01', 'x-envoy-upstream-service-time': '3995', 'x-ratelimit-limit-requests': '10000', 'x-ratelimit-limit-tokens': '2000000', 'x-ratelimit-remaining-requests': '9999', 'x-ratelimit-remaining-tokens': '1999196', 'x-ratelimit-reset-requests': '6ms', 'x-ratelimit-reset-tokens': '24ms', 'x-request-id': 'req_cf3a0c95ac328d54d8855a3a89e55897', 'strict-transport-security': 'max-age=31536000; includeSubDomains; preload', 'cf-cache-status': 'DYNAMIC', 'x-content-type-options': 'nosniff', 'server': 'cloudflare', 'cf-ray': '94d3941ce92137b6-LHR', 'content-encoding': 'gzip', 'alt-svc': 'h3=":443"; ma=86400'})
-2025-06-09 22:04:00,569 - DEBUG - request_id: req_cf3a0c95ac328d54d8855a3a89e55897
-2025-06-09 22:04:00,569 - DEBUG - Adapted content for slide 2 to template intent: The layout is designed for a "showcase" purpose, likely intended to highlight key features, products, or concepts in a visually engaging manner.
-2025-06-09 22:04:00,570 - INFO - Adapted content for slide 2 to template structure
-2025-06-09 22:04:00,570 - DEBUG - Layout 0: Found real name 'Title Slide'
-2025-06-09 22:04:00,570 - DEBUG - Layout 1: Found real name 'Title | One Line | Soft Blue'
-2025-06-09 22:04:00,571 - DEBUG - Layout 2: Found real name 'Title | One Line | Soft White'
-2025-06-09 22:04:00,571 - DEBUG - Layout 3: Found real name 'Title | Frame | Soft Blue'
-2025-06-09 22:04:00,571 - DEBUG - Layout 4: Found real name 'Title | Frame | Soft White'
-2025-06-09 22:04:00,571 - DEBUG - Layout 5: Found real name 'Title Slide_Image'
-2025-06-09 22:04:00,571 - DEBUG - Layout 6: Found real name 'Title Slide_Image 2'
-2025-06-09 22:04:00,572 - DEBUG - Layout 7: Found real name 'Agenda'
-2025-06-09 22:04:00,572 - DEBUG - Layout 8: Found real name 'Agenda | Left'
-2025-06-09 22:04:00,572 - DEBUG - Layout 9: Found real name 'Divider | Large Text | Light Blue'
-2025-06-09 22:04:00,572 - DEBUG - Layout 10: Found real name '1_Section divider 1'
-2025-06-09 22:04:00,573 - DEBUG - Layout 11: Found real name 'Section divider 1'
-2025-06-09 22:04:00,573 - DEBUG - Layout 12: Found real name 'Callout slide 1'
-2025-06-09 22:04:00,573 - DEBUG - Layout 13: Found real name 'Break | Title+Eyebrow | Soft White'
-2025-06-09 22:04:00,573 - DEBUG - Layout 14: Found real name 'Callout slide 2'
-2025-06-09 22:04:00,573 - DEBUG - Layout 15: Found real name 'Break | Eyebrow+Copy | Brunswick Blue'
-2025-06-09 22:04:00,573 - DEBUG - Layout 16: Found real name 'Break | Eyebrow+Copy | Soft Blue'
-2025-06-09 22:04:00,573 - DEBUG - Layout 17: Found real name 'Break | Eyebrow+Copy | Soft White'
-2025-06-09 22:04:00,574 - DEBUG - Layout 18: Found real name 'Break | Title+Copy | Soft White'
-2025-06-09 22:04:00,574 - DEBUG - Layout 19: Found real name 'Team | 1 Person'
-2025-06-09 22:04:00,574 - DEBUG - Layout 20: Found real name 'Team | 3 People'
-2025-06-09 22:04:00,574 - DEBUG - Layout 21: Found real name 'Team | 3 People | Bios'
-2025-06-09 22:04:00,574 - DEBUG - Layout 22: Found real name 'Team | 4 People'
-2025-06-09 22:04:00,574 - DEBUG - Layout 23: Found real name 'Team | 6 People'
-2025-06-09 22:04:00,574 - DEBUG - Layout 24: Found real name 'Team | 6 People | Bios'
-2025-06-09 22:04:00,574 - DEBUG - Layout 25: Found real name 'Team | 12 People'
-2025-06-09 22:04:00,574 - DEBUG - Layout 26: Found real name 'Team slide 4 profiles'
-2025-06-09 22:04:00,575 - DEBUG - Layout 27: Found real name 'Heading, subtitle & content '
-2025-06-09 22:04:00,575 - DEBUG - Layout 28: Found real name 'Heading and subtitle'
-2025-06-09 22:04:00,575 - DEBUG - Layout 29: Found real name 'Heading and subtitle (option)'
-2025-06-09 22:04:00,575 - DEBUG - Layout 30: Found real name 'Info | Title+2 Sections'
-2025-06-09 22:04:00,575 - DEBUG - Layout 31: Found real name 'Info | Title+3 Sections'
-2025-06-09 22:04:00,575 - DEBUG - Layout 32: Found real name 'Info | Title+4 Sections'
-2025-06-09 22:04:00,575 - DEBUG - Layout 33: Found real name 'Single quote + picture'
-2025-06-09 22:04:00,575 - DEBUG - Layout 34: Found real name 'Key message slide 1'
-2025-06-09 22:04:00,575 - DEBUG - Layout 35: Found real name 'Key message slide 2'
-2025-06-09 22:04:00,575 - DEBUG - Layout 36: Found real name 'Info | Title+Content+Callout'
-2025-06-09 22:04:00,575 - DEBUG - Layout 37: Found real name 'Bowtie (basic)'
-2025-06-09 22:04:00,576 - DEBUG - Layout 38: Found real name 'Bowtie (with labels)'
-2025-06-09 22:04:00,576 - DEBUG - Layout 39: Found real name 'Bowtie'
-2025-06-09 22:04:00,576 - DEBUG - Layout 40: Found real name 'Case study slide 1'
-2025-06-09 22:04:00,576 - DEBUG - Layout 41: Found real name 'Case study slide 2'
-2025-06-09 22:04:00,576 - DEBUG - Layout 42: Found real name 'Circles slide'
-2025-06-09 22:04:00,576 - DEBUG - Layout 43: Found real name 'Map'
-2025-06-09 22:04:00,576 - DEBUG - Layout 44: Found real name 'Corporate boiler plate'
-2025-06-09 22:04:00,576 - DEBUG - Layout 45: Found real name 'Business critical'
-2025-06-09 22:04:00,576 - DEBUG - Layout 46: Found real name 'Final brand slide'
-2025-06-09 22:04:00,576 - DEBUG - Layout 47: Found real name 'Monogram Pattern'
-2025-06-09 22:04:00,576 - DEBUG - Layout 48: Found real name 'Final brand slide links'
-2025-06-09 22:04:00,576 - DEBUG - Layout 49: Found real name 'Blank | Soft Blue'
-2025-06-09 22:04:00,577 - DEBUG - Layout 50: Found real name 'Blank'
-2025-06-09 22:04:00,577 - DEBUG - Layout 51: Found real name 'Blank | White'
-2025-06-09 22:04:00,577 - DEBUG - Layout 52: Found real name 'Blank | Brunswick Blue'
-2025-06-09 22:04:00,577 - DEBUG - Layout 53: Found real name '1_Design only - do not use'
-⠙ 📋 Planning slide layouts...2025-06-09 22:04:00,583 - DEBUG - Could not extract visual properties: fill type _NoFill has no foreground color, call .solid() or .patterned() first
-2025-06-09 22:04:00,585 - WARNING - Error extracting shapes: shape is not a placeholder
-2025-06-09 22:04:00,586 - DEBUG - Grid detection failed: shape is not a placeholder
-2025-06-09 22:04:00,586 - ERROR - Failed to extract visual data for layout 0: 'TemplateParser' object has no attribute '_identify_content_zones'
-2025-06-09 22:04:00,587 - WARNING - Error extracting shapes: shape is not a placeholder
-2025-06-09 22:04:00,588 - DEBUG - Grid detection failed: shape is not a placeholder
-2025-06-09 22:04:00,588 - ERROR - Failed to extract visual data for layout 3: 'TemplateParser' object has no attribute '_identify_content_zones'
-2025-06-09 22:04:00,589 - WARNING - Error extracting shapes: shape is not a placeholder
-2025-06-09 22:04:00,590 - DEBUG - Grid detection failed: shape is not a placeholder
-2025-06-09 22:04:00,590 - ERROR - Failed to extract visual data for layout 5: 'TemplateParser' object has no attribute '_identify_content_zones'
-2025-06-09 22:04:00,592 - DEBUG - Could not extract visual properties: fill type _NoFill has no foreground color, call .solid() or .patterned() first
-2025-06-09 22:04:00,592 - WARNING - Error extracting shapes: shape is not a placeholder
-2025-06-09 22:04:00,593 - DEBUG - Grid detection failed: shape is not a placeholder
-2025-06-09 22:04:00,593 - ERROR - Failed to extract visual data for layout 7: 'TemplateParser' object has no attribute '_identify_content_zones'
-2025-06-09 22:04:00,595 - ERROR - Failed to extract visual data for layout 9: 'TemplateParser' object has no attribute '_identify_content_zones'
-2025-06-09 22:04:00,604 - ERROR - Failed to extract visual data for layout 11: 'TemplateParser' object has no attribute '_identify_content_zones'
-2025-06-09 22:04:00,608 - DEBUG - Could not extract visual properties: fill type _NoFill has no foreground color, call .solid() or .patterned() first
-2025-06-09 22:04:00,608 - WARNING - Error extracting shapes: shape is not a placeholder
-2025-06-09 22:04:00,609 - DEBUG - Grid detection failed: shape is not a placeholder
-2025-06-09 22:04:00,610 - ERROR - Failed to extract visual data for layout 19: 'TemplateParser' object has no attribute '_identify_content_zones'
-2025-06-09 22:04:00,613 - DEBUG - Could not extract visual properties: fill type _NoFill has no foreground color, call .solid() or .patterned() first
-2025-06-09 22:04:00,613 - WARNING - Error extracting shapes: shape is not a placeholder
-2025-06-09 22:04:00,616 - DEBUG - Grid detection failed: shape is not a placeholder
-2025-06-09 22:04:00,616 - ERROR - Failed to extract visual data for layout 27: 'TemplateParser' object has no attribute '_identify_content_zones'
-2025-06-09 22:04:00,617 - WARNING - Error extracting shapes: shape is not a placeholder
-2025-06-09 22:04:00,618 - DEBUG - Grid detection failed: shape is not a placeholder
-2025-06-09 22:04:00,618 - ERROR - Failed to extract visual data for layout 46: 'TemplateParser' object has no attribute '_identify_content_zones'
-2025-06-09 22:04:00,618 - DEBUG - Request options: {'method': 'post', 'url': '/chat/completions', 'files': None, 'idempotency_key': 'stainless-python-retry-e53536fd-a4d2-4247-85e1-55657cd941eb', 'json_data': {'messages': [{'role': 'system', 'content': 'You are an expert presentation designer who understands content intent and can match content to appropriate template layouts. Analyze the slide content and determine what type of slide this should be based on its purpose and the available template options.'}, {'role': 'user', 'content': "Analyze this slide content and determine what type of slide this should be based on its intent and purpose.\n\nSLIDE CONTENT:\nSLIDE TITLE: 'Who Shapes Perception?' | CONTENT: 2 bullet points | BULLET POINTS: ['Stakeholders: ESG investors, regulators, NGOs, communities', 'Channels: Tier-1 media, social, policy forums, partners'] | IMAGES: Needs images (stakeholder engagement channels diagram) | NOTES: Highlight diversity of voices and need for tailored engagement.... | CURRENT_TYPE: two_column | SLIDE_INDEX: 3\n\nAVAILABLE TEMPLATE LAYOUTS:\n'Title Slide': No description available\n'Title | Frame | Soft Blue': No description available\n'Title Slide_Image': No description available\n'Agenda': No description available\n'Divider | Large Text | Light Blue': No description available\n'Section divider 1': No description available\n'Team | 1 Person': No description available\n'Heading, subtitle & content ': No description available\n'Final brand slide': No description available\n\nTASK:\nBased on the slide content's intent and purpose, determine what type of slide this should be. Consider:\n1. What is the main purpose of this slide?\n2. What kind of layout would best serve this content?\n3. Are there any template layouts that seem specifically designed for this type of content?\n\nRespond with just the most appropriate slide type (one word if possible, like: title, team, comparison, process, data, portfolio, services, content, image, etc.)\n\nSLIDE_TYPE:"}], 'model': 'gpt-4o', 'max_tokens': 150, 'temperature': 0.1}}
-2025-06-09 22:04:00,619 - DEBUG - Sending HTTP Request: POST https://api.openai.com/v1/chat/completions
-2025-06-09 22:04:00,619 - DEBUG - send_request_headers.started request=<Request [b'POST']>
-2025-06-09 22:04:00,620 - DEBUG - send_request_headers.complete
-2025-06-09 22:04:00,620 - DEBUG - send_request_body.started request=<Request [b'POST']>
-2025-06-09 22:04:00,620 - DEBUG - send_request_body.complete
-2025-06-09 22:04:00,620 - DEBUG - receive_response_headers.started request=<Request [b'POST']>
-⠇ 📋 Planning slide layouts...2025-06-09 22:04:01,129 - DEBUG - receive_response_headers.complete return_value=(b'HTTP/1.1', 200, b'OK', [(b'Date', b'Mon, 09 Jun 2025 21:04:01 GMT'), (b'Content-Type', b'application/json'), (b'Transfer-Encoding', b'chunked'), (b'Connection', b'keep-alive'), (b'access-control-expose-headers', b'X-Request-ID'), (b'openai-organization', b'brunswick-group-9kojjv'), (b'openai-processing-ms', b'258'), (b'openai-version', b'2020-10-01'), (b'x-envoy-upstream-service-time', b'263'), (b'x-ratelimit-limit-requests', b'10000'), (b'x-ratelimit-limit-tokens', b'2000000'), (b'x-ratelimit-remaining-requests', b'9999'), (b'x-ratelimit-remaining-tokens', b'1999570'), (b'x-ratelimit-reset-requests', b'6ms'), (b'x-ratelimit-reset-tokens', b'12ms'), (b'x-request-id', b'req_a0a9b339074080a198b8def3b0dede9a'), (b'strict-transport-security', b'max-age=31536000; includeSubDomains; preload'), (b'cf-cache-status', b'DYNAMIC'), (b'X-Content-Type-Options', b'nosniff'), (b'Server', b'cloudflare'), (b'CF-RAY', b'94d39438fbcb37b6-LHR'), (b'Content-Encoding', b'gzip'), (b'alt-svc', b'h3=":443"; ma=86400')])
-2025-06-09 22:04:01,130 - INFO - HTTP Request: POST https://api.openai.com/v1/chat/completions "HTTP/1.1 200 OK"
-2025-06-09 22:04:01,130 - DEBUG - receive_response_body.started request=<Request [b'POST']>
-2025-06-09 22:04:01,130 - DEBUG - receive_response_body.complete
-2025-06-09 22:04:01,130 - DEBUG - response_closed.started
-2025-06-09 22:04:01,130 - DEBUG - response_closed.complete
+2025-06-09 22:17:04,292 - DEBUG - Layout 52: Found real name 'Blank | Brunswick Blue'
+2025-06-09 22:17:04,292 - DEBUG - Layout 53: Found real name '1_Design only - do not use'
+2025-06-09 22:17:04,294 - DEBUG - Could not extract visual properties: fill type _NoFill has no foreground color, call .solid() or .patterned() first
+2025-06-09 22:17:04,296 - WARNING - Error extracting shapes: shape is not a placeholder
+2025-06-09 22:17:04,298 - DEBUG - Grid detection failed: shape is not a placeholder
+2025-06-09 22:17:04,300 - DEBUG - Zone mapping failed: shape is not a placeholder
+2025-06-09 22:17:04,302 - ERROR - Failed to extract visual data for layout 0: shape is not a placeholder
+⠼ 📋 Planning slide layouts...2025-06-09 22:17:04,303 - WARNING - Error extracting shapes: shape is not a placeholder
+2025-06-09 22:17:04,304 - DEBUG - Grid detection failed: shape is not a placeholder
+2025-06-09 22:17:04,304 - DEBUG - Zone mapping failed: shape is not a placeholder
+2025-06-09 22:17:04,304 - ERROR - Failed to extract visual data for layout 3: shape is not a placeholder
+2025-06-09 22:17:04,305 - WARNING - Error extracting shapes: shape is not a placeholder
+2025-06-09 22:17:04,305 - DEBUG - Grid detection failed: shape is not a placeholder
+2025-06-09 22:17:04,305 - DEBUG - Zone mapping failed: shape is not a placeholder
+2025-06-09 22:17:04,306 - ERROR - Failed to extract visual data for layout 5: shape is not a placeholder
+2025-06-09 22:17:04,307 - DEBUG - Could not extract visual properties: fill type _NoFill has no foreground color, call .solid() or .patterned() first
+2025-06-09 22:17:04,307 - WARNING - Error extracting shapes: shape is not a placeholder
+2025-06-09 22:17:04,307 - DEBUG - Grid detection failed: shape is not a placeholder
+2025-06-09 22:17:04,308 - DEBUG - Zone mapping failed: shape is not a placeholder
+2025-06-09 22:17:04,309 - ERROR - Failed to extract visual data for layout 7: shape is not a placeholder
+2025-06-09 22:17:04,315 - DEBUG - Failed to analyze placeholder 0: 'TemplateParser' object has no attribute '_extract_placeholder_formatting'
+2025-06-09 22:17:04,316 - DEBUG - Failed to analyze placeholder 1: 'TemplateParser' object has no attribute '_extract_placeholder_formatting'
+2025-06-09 22:17:04,318 - DEBUG - Failed to analyze placeholder 0: 'TemplateParser' object has no attribute '_extract_placeholder_formatting'
+2025-06-09 22:17:04,319 - DEBUG - Failed to analyze placeholder 1: 'TemplateParser' object has no attribute '_extract_placeholder_formatting'
+2025-06-09 22:17:04,321 - DEBUG - Extracted visual data for layout 9: 2 total shapes
+2025-06-09 22:17:04,326 - DEBUG - Failed to analyze placeholder 0: 'TemplateParser' object has no attribute '_extract_placeholder_formatting'
+2025-06-09 22:17:04,327 - DEBUG - Failed to analyze placeholder 1: 'TemplateParser' object has no attribute '_extract_placeholder_formatting'
+2025-06-09 22:17:04,327 - DEBUG - Failed to analyze placeholder 2: 'TemplateParser' object has no attribute '_extract_placeholder_formatting'
+2025-06-09 22:17:04,328 - DEBUG - Failed to analyze placeholder 0: 'TemplateParser' object has no attribute '_extract_placeholder_formatting'
+2025-06-09 22:17:04,329 - DEBUG - Failed to analyze placeholder 1: 'TemplateParser' object has no attribute '_extract_placeholder_formatting'
+2025-06-09 22:17:04,329 - DEBUG - Failed to analyze placeholder 2: 'TemplateParser' object has no attribute '_extract_placeholder_formatting'
+2025-06-09 22:17:04,330 - DEBUG - Extracted visual data for layout 11: 3 total shapes
+2025-06-09 22:17:04,337 - DEBUG - Could not extract visual properties: fill type _NoFill has no foreground color, call .solid() or .patterned() first
+2025-06-09 22:17:04,338 - WARNING - Error extracting shapes: shape is not a placeholder
+2025-06-09 22:17:04,339 - DEBUG - Grid detection failed: shape is not a placeholder
+2025-06-09 22:17:04,340 - DEBUG - Zone mapping failed: shape is not a placeholder
+2025-06-09 22:17:04,341 - ERROR - Failed to extract visual data for layout 19: shape is not a placeholder
+2025-06-09 22:17:04,343 - DEBUG - Could not extract visual properties: fill type _NoFill has no foreground color, call .solid() or .patterned() first
+2025-06-09 22:17:04,343 - WARNING - Error extracting shapes: shape is not a placeholder
+2025-06-09 22:17:04,344 - DEBUG - Grid detection failed: shape is not a placeholder
+2025-06-09 22:17:04,344 - DEBUG - Zone mapping failed: shape is not a placeholder
+2025-06-09 22:17:04,345 - ERROR - Failed to extract visual data for layout 27: shape is not a placeholder
+2025-06-09 22:17:04,346 - WARNING - Error extracting shapes: shape is not a placeholder
+2025-06-09 22:17:04,347 - DEBUG - Grid detection failed: shape is not a placeholder
+2025-06-09 22:17:04,347 - DEBUG - Zone mapping failed: shape is not a placeholder
+2025-06-09 22:17:04,348 - ERROR - Failed to extract visual data for layout 46: shape is not a placeholder
