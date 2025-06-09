@@ -409,7 +409,10 @@ class TemplateParser:
                 "spatial_analysis": self._analyze_spatial_relationships(layout),
                 "design_patterns": self._detect_design_patterns(layout),
                 "content_zones": self._map_content_zones(layout),
-                "visual_summary": self._generate_visual_summary(layout),
+                "placeholders_detailed": self._extract_detailed_placeholder_info(layout),
+                "text_boxes_detailed": self._extract_detailed_text_box_info(layout),
+                "layout_structure": self._analyze_layout_structure(layout),
+                "visual_summary": self._generate_enhanced_visual_summary(layout),
                 "recommended_content_types": self._infer_content_types(layout)
             }
             
@@ -531,9 +534,64 @@ class TemplateParser:
         return {
             "alignment_patterns": self._detect_alignment_patterns(shapes),
             "layout_grid": self._detect_grid_structure(shapes),
-            "content_zones": self._identify_content_zones(shapes),
+            "content_zones": self._map_content_zones(layout),
             "visual_balance": self._analyze_visual_balance(shapes)
         }
+    
+    def _analyze_visual_balance(self, shapes) -> Dict:
+        """Analyze visual balance and weight distribution in the layout."""
+        try:
+            if not shapes:
+                return {"balance_type": "empty", "weight_distribution": "none"}
+            
+            # Calculate center of mass for shapes
+            total_area = 0
+            weighted_x = 0
+            weighted_y = 0
+            
+            for shape in shapes:
+                try:
+                    area = shape.width * shape.height
+                    center_x = shape.left + shape.width // 2
+                    center_y = shape.top + shape.height // 2
+                    
+                    total_area += area
+                    weighted_x += center_x * area
+                    weighted_y += center_y * area
+                except:
+                    continue
+            
+            if total_area == 0:
+                return {"balance_type": "unknown", "weight_distribution": "none"}
+            
+            center_of_mass_x = weighted_x / total_area
+            center_of_mass_y = weighted_y / total_area
+            
+            # Compare to slide center
+            slide_center_x = self.prs.slide_width // 2
+            slide_center_y = self.prs.slide_height // 2
+            
+            x_offset = abs(center_of_mass_x - slide_center_x) / slide_center_x
+            y_offset = abs(center_of_mass_y - slide_center_y) / slide_center_y
+            
+            if x_offset < 0.1 and y_offset < 0.1:
+                balance_type = "centered"
+            elif x_offset > 0.3:
+                balance_type = "left_heavy" if center_of_mass_x < slide_center_x else "right_heavy"
+            elif y_offset > 0.3:
+                balance_type = "top_heavy" if center_of_mass_y < slide_center_y else "bottom_heavy"
+            else:
+                balance_type = "balanced"
+            
+            return {
+                "balance_type": balance_type,
+                "weight_distribution": f"x_offset: {x_offset:.2f}, y_offset: {y_offset:.2f}",
+                "center_of_mass": (center_of_mass_x, center_of_mass_y)
+            }
+            
+        except Exception as e:
+            logger.debug(f"Visual balance analysis failed: {e}")
+            return {"balance_type": "unknown", "weight_distribution": "analysis_failed"}
     
     def _detect_alignment_patterns(self, shapes) -> Dict:
         """Detect common alignment patterns in the layout."""
@@ -909,6 +967,352 @@ class TemplateParser:
         except Exception as e:
             logger.error(f"Failed to create detailed description: {e}")
             return f"Layout {semantic_name}: Description generation failed"
+    
+    def _extract_detailed_placeholder_info(self, layout: SlideLayout) -> Dict:
+        """Extract comprehensive information about every placeholder in the layout."""
+        try:
+            placeholders_info = {
+                "total_count": 0,
+                "by_type": {},
+                "positions": [],
+                "detailed_analysis": []
+            }
+            
+            for i, placeholder in enumerate(layout.placeholders):
+                try:
+                    ph_type = placeholder.placeholder_format.type
+                    type_name = self._placeholder_type_name(ph_type)
+                    
+                    # Calculate relative position
+                    rel_left = placeholder.left / self.prs.slide_width
+                    rel_top = placeholder.top / self.prs.slide_height
+                    rel_width = placeholder.width / self.prs.slide_width
+                    rel_height = placeholder.height / self.prs.slide_height
+                    
+                    placeholder_detail = {
+                        "index": i,
+                        "type_id": ph_type,
+                        "type_name": type_name,
+                        "position": {
+                            "left": placeholder.left,
+                            "top": placeholder.top,
+                            "width": placeholder.width,
+                            "height": placeholder.height,
+                            "relative": {
+                                "left": rel_left,
+                                "top": rel_top,
+                                "width": rel_width,
+                                "height": rel_height
+                            }
+                        },
+                        "zone": self._determine_placeholder_zone(rel_left, rel_top, rel_width, rel_height),
+                        "text_capacity": self._estimate_text_capacity(placeholder),
+                        "formatting": self._extract_placeholder_formatting(placeholder)
+                    }
+                    
+                    placeholders_info["detailed_analysis"].append(placeholder_detail)
+                    placeholders_info["total_count"] += 1
+                    
+                    # Count by type
+                    if type_name not in placeholders_info["by_type"]:
+                        placeholders_info["by_type"][type_name] = 0
+                    placeholders_info["by_type"][type_name] += 1
+                    
+                    # Track positions
+                    placeholders_info["positions"].append({
+                        "type": type_name,
+                        "zone": placeholder_detail["zone"],
+                        "relative_pos": (rel_left, rel_top)
+                    })
+                    
+                except Exception as e:
+                    logger.debug(f"Failed to analyze placeholder {i}: {e}")
+                    continue
+            
+            return placeholders_info
+            
+        except Exception as e:
+            logger.debug(f"Detailed placeholder extraction failed: {e}")
+            return {"total_count": 0, "by_type": {}, "positions": [], "detailed_analysis": []}
+    
+    def _extract_detailed_text_box_info(self, layout: SlideLayout) -> Dict:
+        """Extract information about all text boxes (including non-placeholder text)."""
+        try:
+            text_boxes_info = {
+                "total_count": 0,
+                "non_placeholder_text": [],
+                "text_elements": []
+            }
+            
+            for i, shape in enumerate(layout.shapes):
+                try:
+                    # Check if it's a text-containing shape that's not a placeholder
+                    if hasattr(shape, 'text_frame') and shape.text_frame and not hasattr(shape, 'placeholder_format'):
+                        rel_left = shape.left / self.prs.slide_width
+                        rel_top = shape.top / self.prs.slide_height
+                        rel_width = shape.width / self.prs.slide_width
+                        rel_height = shape.height / self.prs.slide_height
+                        
+                        text_box_detail = {
+                            "index": i,
+                            "shape_type": str(shape.shape_type),
+                            "name": getattr(shape, 'name', f"TextBox_{i}"),
+                            "position": {
+                                "left": shape.left,
+                                "top": shape.top,
+                                "width": shape.width,
+                                "height": shape.height,
+                                "relative": {
+                                    "left": rel_left,
+                                    "top": rel_top,
+                                    "width": rel_width,
+                                    "height": rel_height
+                                }
+                            },
+                            "zone": self._determine_placeholder_zone(rel_left, rel_top, rel_width, rel_height),
+                            "text_content": self._extract_existing_text(shape),
+                            "text_capacity": self._estimate_text_capacity(shape),
+                            "formatting": self._extract_text_formatting(shape)
+                        }
+                        
+                        text_boxes_info["non_placeholder_text"].append(text_box_detail)
+                        text_boxes_info["total_count"] += 1
+                        
+                        text_boxes_info["text_elements"].append({
+                            "type": "text_box",
+                            "zone": text_box_detail["zone"],
+                            "content_hint": text_box_detail["text_content"][:50] if text_box_detail["text_content"] else "[empty]"
+                        })
+                        
+                except Exception as e:
+                    logger.debug(f"Failed to analyze text box {i}: {e}")
+                    continue
+            
+            return text_boxes_info
+            
+        except Exception as e:
+            logger.debug(f"Text box extraction failed: {e}")
+            return {"total_count": 0, "non_placeholder_text": [], "text_elements": []}
+    
+    def _determine_placeholder_zone(self, rel_left: float, rel_top: float, rel_width: float, rel_height: float) -> str:
+        """Determine which zone a placeholder/text box belongs to based on position."""
+        if rel_top < 0.15:  # Top 15%
+            return "header"
+        elif rel_top > 0.85:  # Bottom 15%
+            return "footer"
+        elif rel_left > 0.75:  # Right 25%
+            return "sidebar_right"
+        elif rel_left < 0.25 and rel_width < 0.4:  # Left 25% and narrow
+            return "sidebar_left"
+        elif rel_top < 0.5:  # Upper half of main area
+            return "main_upper"
+        else:  # Lower half of main area
+            return "main_lower"
+    
+    def _estimate_text_capacity(self, shape) -> Dict:
+        """Estimate how much text a shape can hold."""
+        try:
+            # Calculate area in square inches (rough estimate)
+            area_emu = shape.width * shape.height
+            area_inches = area_emu / (914400 * 914400)  # Convert EMU to square inches
+            
+            # Rough estimates based on typical font sizes
+            estimated_chars = int(area_inches * 200)  # ~200 chars per square inch
+            estimated_words = estimated_chars // 6  # ~6 chars per word
+            estimated_lines = max(1, int(shape.height / 342900))  # ~342900 EMU per line at 18pt
+            
+            return {
+                "estimated_characters": estimated_chars,
+                "estimated_words": estimated_words,
+                "estimated_lines": estimated_lines,
+                "area_square_inches": round(area_inches, 2),
+                "capacity_category": self._categorize_text_capacity(estimated_words)
+            }
+            
+        except Exception as e:
+            logger.debug(f"Text capacity estimation failed: {e}")
+            return {"estimated_characters": 0, "estimated_words": 0, "estimated_lines": 0, "capacity_category": "unknown"}
+    
+    def _categorize_text_capacity(self, word_count: int) -> str:
+        """Categorize text capacity based on estimated word count."""
+        if word_count < 10:
+            return "title_short"  # Title or short phrase
+        elif word_count < 30:
+            return "subtitle_medium"  # Subtitle or tagline
+        elif word_count < 100:
+            return "content_brief"  # Brief content or bullet points
+        elif word_count < 300:
+            return "content_standard"  # Standard paragraph content
+        else:
+            return "content_extensive"  # Long-form content
+    
+    def _extract_existing_text(self, shape) -> str:
+        """Extract any existing text from a shape."""
+        try:
+            if hasattr(shape, 'text_frame') and shape.text_frame:
+                text_parts = []
+                for paragraph in shape.text_frame.paragraphs:
+                    if paragraph.text.strip():
+                        text_parts.append(paragraph.text.strip())
+                return " ".join(text_parts)
+        except:
+            pass
+        return ""
+    
+    def _extract_text_formatting(self, shape) -> Dict:
+        """Extract formatting information from a text shape."""
+        return self._extract_placeholder_formatting(shape)  # Same logic
+    
+    def _analyze_layout_structure(self, layout: SlideLayout) -> Dict:
+        """Analyze the overall structure and organization of the layout."""
+        try:
+            placeholders = list(layout.placeholders)
+            all_shapes = list(layout.shapes)
+            
+            structure = {
+                "layout_complexity": "simple",
+                "organization_pattern": "unknown",
+                "content_flow": "unknown",
+                "visual_hierarchy": [],
+                "interaction_zones": []
+            }
+            
+            # Determine complexity
+            total_elements = len(all_shapes)
+            if total_elements <= 3:
+                structure["layout_complexity"] = "minimal"
+            elif total_elements <= 6:
+                structure["layout_complexity"] = "simple"
+            elif total_elements <= 12:
+                structure["layout_complexity"] = "moderate"
+            else:
+                structure["layout_complexity"] = "complex"
+            
+            # Analyze organization pattern
+            if len(placeholders) >= 3:
+                # Check for column-based organization
+                lefts = [p.left for p in placeholders]
+                unique_lefts = len(set(lefts))
+                
+                if unique_lefts >= 3:
+                    structure["organization_pattern"] = "multi_column"
+                elif unique_lefts == 2:
+                    structure["organization_pattern"] = "two_column"
+                else:
+                    structure["organization_pattern"] = "single_column"
+            else:
+                structure["organization_pattern"] = "simple"
+            
+            # Determine content flow
+            if placeholders:
+                # Sort by top position to determine reading order
+                sorted_placeholders = sorted(placeholders, key=lambda p: (p.top, p.left))
+                
+                # Check if it's top-to-bottom or left-to-right flow
+                vertical_variation = max(p.top for p in placeholders) - min(p.top for p in placeholders)
+                horizontal_variation = max(p.left for p in placeholders) - min(p.left for p in placeholders)
+                
+                if vertical_variation > horizontal_variation:
+                    structure["content_flow"] = "vertical"
+                else:
+                    structure["content_flow"] = "horizontal"
+            
+            # Create visual hierarchy list
+            for i, placeholder in enumerate(sorted(placeholders, key=lambda p: (p.top, p.left))):
+                ph_type = placeholder.placeholder_format.type
+                type_name = self._placeholder_type_name(ph_type)
+                structure["visual_hierarchy"].append({
+                    "order": i + 1,
+                    "type": type_name,
+                    "purpose": self._infer_placeholder_purpose(ph_type)
+                })
+            
+            return structure
+            
+        except Exception as e:
+            logger.debug(f"Layout structure analysis failed: {e}")
+            return {"layout_complexity": "unknown", "organization_pattern": "unknown"}
+    
+    def _infer_placeholder_purpose(self, ph_type: int) -> str:
+        """Infer the intended purpose of a placeholder based on its type."""
+        purpose_map = {
+            1: "main_heading",  # TITLE
+            2: "main_content",  # BODY
+            3: "supporting_heading",  # SUBTITLE
+            7: "flexible_content",  # OBJECT
+            13: "centered_heading",  # CENTERED_TITLE
+            18: "visual_content",  # PICTURE
+            14: "data_visualization",  # CHART
+            15: "tabular_data",  # TABLE
+        }
+        return purpose_map.get(ph_type, "unknown_content")
+    
+    def _generate_enhanced_visual_summary(self, layout: SlideLayout) -> str:
+        """Generate a comprehensive human-readable description of the layout."""
+        try:
+            placeholders_info = self._extract_detailed_placeholder_info(layout)
+            text_boxes_info = self._extract_detailed_text_box_info(layout)
+            structure_info = self._analyze_layout_structure(layout)
+            
+            summary_parts = []
+            
+            # Basic structure
+            complexity = structure_info.get("layout_complexity", "unknown")
+            organization = structure_info.get("organization_pattern", "unknown")
+            flow = structure_info.get("content_flow", "unknown")
+            
+            summary_parts.append(f"{complexity.title()} {organization} layout with {flow} content flow")
+            
+            # Placeholder breakdown
+            total_placeholders = placeholders_info.get("total_count", 0)
+            if total_placeholders > 0:
+                by_type = placeholders_info.get("by_type", {})
+                type_summary = []
+                for ptype, count in by_type.items():
+                    if count == 1:
+                        type_summary.append(f"1 {ptype}")
+                    else:
+                        type_summary.append(f"{count} {ptype}s")
+                
+                if type_summary:
+                    summary_parts.append(f"Contains {', '.join(type_summary)}")
+            
+            # Content zones
+            zones = {}
+            for ph_detail in placeholders_info.get("detailed_analysis", []):
+                zone = ph_detail.get("zone", "unknown")
+                if zone not in zones:
+                    zones[zone] = []
+                zones[zone].append(ph_detail.get("type_name", "unknown"))
+            
+            if zones:
+                zone_descriptions = []
+                for zone, types in zones.items():
+                    zone_descriptions.append(f"{zone}: {', '.join(set(types))}")
+                summary_parts.append(f"Zones - {'; '.join(zone_descriptions)}")
+            
+            # Text capacity summary
+            capacities = []
+            for ph_detail in placeholders_info.get("detailed_analysis", []):
+                capacity = ph_detail.get("text_capacity", {}).get("capacity_category", "unknown")
+                capacities.append(capacity)
+            
+            if capacities:
+                capacity_counts = {}
+                for cap in capacities:
+                    capacity_counts[cap] = capacity_counts.get(cap, 0) + 1
+                
+                capacity_summary = []
+                for cap, count in capacity_counts.items():
+                    capacity_summary.append(f"{count} {cap}")
+                
+                summary_parts.append(f"Text capacity: {', '.join(capacity_summary)}")
+            
+            return " | ".join(summary_parts)
+            
+        except Exception as e:
+            logger.debug(f"Enhanced summary generation failed: {e}")
+            return self._generate_visual_summary(layout)  # Fallback to basic summary
 
     def get_theme_color(self, color_name: str) -> str:
         """
