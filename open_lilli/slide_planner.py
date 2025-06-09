@@ -97,10 +97,13 @@ class SlidePlanner:
             "comparison": ["comparison", "two_column", "three_column", "content_dense", "blank"],
             "content_dense": ["content_dense", "three_column", "two_column", "content", "blank"],
             "three_column": ["three_column", "content_dense", "two_column", "comparison", "blank"],
-            # Add content-based patterns
+            # Enhanced content-based patterns with semantic support
+            "team": ["image_content", "three_column", "two_column", "content", "blank"],  # Team pages need images
             "process": ["image_content", "two_column", "content", "blank"],
             "data": ["content_dense", "two_column", "comparison", "content", "blank"],
-            "overview": ["three_column", "content_dense", "two_column", "content", "blank"]
+            "overview": ["three_column", "content_dense", "two_column", "content", "blank"],
+            "portfolio": ["image", "image_content", "three_column", "content", "blank"],  # Portfolio needs images
+            "services": ["content_dense", "three_column", "two_column", "content", "blank"]
         }
 
     def plan_slides(
@@ -230,22 +233,31 @@ class SlidePlanner:
         bullets = [bullet.lower() for bullet in slide.get_bullet_texts()]
         all_content = f"{title} {' '.join(bullets)}"
         
-        # Pattern detection keywords
+        # Enhanced pattern detection keywords
+        team_words = ['team', 'staff', 'people', 'member', 'employee', 'founder', 'leadership', 'meet', 'our team', 'about us', 'who we are', 'bio', 'profile']
         comparison_words = ['vs', 'versus', 'compared to', 'difference', 'contrast', 'before/after', 'pros and cons']
-        process_words = ['step', 'process', 'workflow', 'procedure', 'method', 'approach', 'strategy']
+        process_words = ['step', 'process', 'workflow', 'procedure', 'method', 'approach', 'strategy', 'timeline', 'roadmap']
         data_words = ['data', 'metrics', 'statistics', 'numbers', 'results', 'performance', 'analysis']
         overview_words = ['overview', 'summary', 'key points', 'highlights', 'main', 'primary', 'executive']
+        portfolio_words = ['portfolio', 'gallery', 'showcase', 'examples', 'work', 'projects', 'case studies']
+        service_words = ['services', 'products', 'features', 'benefits', 'offerings', 'solutions']
         
         # Count bullet points to assess density
         bullet_count = len(bullets)
         
-        # Enhanced pattern matching
-        if any(word in all_content for word in comparison_words) or bullet_count >= 2 and 'comparison' in title:
+        # Enhanced pattern matching with semantic content detection
+        if any(word in all_content for word in team_words):
+            return 'team'
+        elif any(word in all_content for word in comparison_words) or bullet_count >= 2 and 'comparison' in title:
             return 'comparison'
         elif any(word in all_content for word in process_words) or 'flow' in title:
             return 'process'
         elif any(word in all_content for word in data_words) or slide.chart_data:
             return 'data'
+        elif any(word in all_content for word in portfolio_words):
+            return 'portfolio'
+        elif any(word in all_content for word in service_words):
+            return 'services'
         elif any(word in all_content for word in overview_words) or bullet_count >= 6:
             return 'overview'
         elif bullet_count >= 8:  # Very dense content
@@ -345,7 +357,7 @@ class SlidePlanner:
 
     def _select_layout(self, slide_type: str) -> int:
         """
-        Select the best available layout for a slide type.
+        Select the best available layout for a slide type using semantic matching.
         
         Args:
             slide_type: Type of slide
@@ -353,7 +365,17 @@ class SlidePlanner:
         Returns:
             Layout index
         """
-        # Get prioritized layout options for this slide type
+        # First, try semantic matching for specialized content types
+        semantic_matches = self.template_parser.find_layouts_for_content_type([slide_type])
+        
+        if semantic_matches:
+            # Use the first semantically matched layout
+            layout_index = semantic_matches[0]
+            layout_name = self.template_parser.reverse_layout_map.get(layout_index, f"layout_{layout_index}")
+            logger.info(f"Found semantic match: layout '{layout_name}' (index {layout_index}) for slide type '{slide_type}'")
+            return layout_index
+        
+        # If no semantic match, fall back to prioritized layout options
         preferred_layouts = self.layout_priorities.get(slide_type, ["content", "blank"])
         available_layouts = self.template_parser.list_available_layouts()
         
@@ -361,7 +383,7 @@ class SlidePlanner:
         for preferred in preferred_layouts:
             if preferred in available_layouts:
                 layout_index = self.template_parser.get_layout_index(preferred)
-                logger.debug(f"Selected layout '{preferred}' (index {layout_index}) for slide type '{slide_type}'")
+                logger.debug(f"Selected priority layout '{preferred}' (index {layout_index}) for slide type '{slide_type}'")
                 return layout_index
         
         # Fallback to first available layout

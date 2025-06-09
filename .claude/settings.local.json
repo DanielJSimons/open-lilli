@@ -49,7 +49,8 @@
       "Bash(/home/dsimons/.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg -A 30 \"def _add_hierarchical_bullet_content\" /home/dsimons/git/open-lilli/open_lilli/slide_assembler.py)",
       "Bash(/home/dsimons/.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg -A 30 \"def _create_content_distribution_strategy\" /home/dsimons/git/open-lilli/open_lilli/slide_assembler.py)",
       "Bash(/home/dsimons/.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg -A 20 \"_distribute_bullets_across_columns\" /home/dsimons/git/open-lilli/open_lilli/slide_assembler.py)",
-      "Bash(/home/dsimons/.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg \"class.*:\" /home/dsimons/git/open-lilli/open_lilli/slide_assembler.py)"
+      "Bash(/home/dsimons/.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg \"class.*:\" /home/dsimons/git/open-lilli/open_lilli/slide_assembler.py)",
+      "Bash(unzip:*)"
     ],
     "deny": []
   }

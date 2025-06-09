@@ -88,6 +88,43 @@ class LayoutRecommender:
             # Fallback to basic recommendation
             return self._create_fallback_recommendation(slide, available_layouts)
     
+    def _extract_content_keywords(self, slide: SlidePlan) -> List[str]:
+        """
+        Extract keywords from slide content for semantic matching.
+        
+        Args:
+            slide: SlidePlan to analyze
+            
+        Returns:
+            List of content keywords
+        """
+        keywords = []
+        
+        try:
+            # Extract from title
+            title_words = slide.title.lower().split()
+            keywords.extend(title_words)
+            
+            # Extract from bullets
+            bullets = slide.get_bullet_texts()
+            for bullet in bullets:
+                bullet_words = bullet.lower().split()
+                keywords.extend(bullet_words)
+            
+            # Add slide type
+            keywords.append(slide.slide_type)
+            
+            # Clean up keywords (remove common stop words)
+            stop_words = {'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'is', 'are', 'was', 'were'}
+            keywords = [k for k in keywords if k not in stop_words and len(k) > 2]
+            
+            logger.debug(f"Extracted keywords for semantic matching: {keywords[:10]}...")  # Log first 10
+            
+        except Exception as e:
+            logger.error(f"Failed to extract content keywords: {e}")
+            
+        return keywords
+    
     def _create_slide_content_summary(self, slide: SlidePlan) -> str:
         """
         Create a comprehensive summary of slide content for layout selection.

@@ -52,6 +52,7 @@ class TemplateParser:
         # Analyze the template
         self.layout_map = self._index_layouts()
         self.reverse_layout_map = {v: k for k, v in self.layout_map.items()} # Added reverse map
+        self.semantic_layout_map = self._generate_semantic_layout_map()  # New: maps content types to layouts
         self.palette = self._extract_theme_colors()
         self.template_style = self._extract_template_style()
 
@@ -95,6 +96,167 @@ class TemplateParser:
         self._ensure_basic_layouts(layout_map)
         
         return layout_map
+    
+    def _extract_real_layout_names(self) -> Dict[int, str]:
+        """
+        Extract the actual layout names from PowerPoint template.
+        
+        Returns:
+            Dictionary mapping layout index to real layout name
+        """
+        real_names = {}
+        
+        try:
+            for i, layout in enumerate(self.prs.slide_layouts):
+                # Try to get the actual layout name from PowerPoint
+                layout_name = getattr(layout, 'name', None)
+                
+                if layout_name and layout_name != f"Layout {i+1}" and layout_name != f"Layout_{i}":
+                    # We have a meaningful layout name
+                    real_names[i] = layout_name
+                    logger.debug(f"Layout {i}: Found real name '{layout_name}'")
+                else:
+                    # Use structural classification as fallback
+                    semantic_name = self._classify_layout(layout, i)
+                    real_names[i] = semantic_name
+                    logger.debug(f"Layout {i}: Using classified name '{semantic_name}'")
+                    
+        except Exception as e:
+            logger.error(f"Failed to extract real layout names: {e}")
+            # Fallback to index-based naming
+            for i in range(len(self.prs.slide_layouts)):
+                real_names[i] = f"layout_{i}"
+                
+        return real_names
+    
+    def _generate_semantic_layout_map(self) -> Dict[str, List[int]]:
+        """
+        Create semantic mapping from content types to appropriate layout indices.
+        
+        Returns:
+            Dictionary mapping content semantics to list of suitable layout indices
+        """
+        semantic_map = {
+            "team": [],
+            "people": [],
+            "staff": [],
+            "about_us": [],
+            "bios": [],
+            "profiles": [],
+            "contact": [],
+            "timeline": [],
+            "roadmap": [],
+            "agenda": [],
+            "gallery": [],
+            "portfolio": [],
+            "testimonials": [],
+            "reviews": [],
+            "process": [],
+            "steps": [],
+            "workflow": [],
+            "comparison": [],
+            "vs": [],
+            "features": [],
+            "benefits": [],
+            "services": [],
+            "products": []
+        }
+        
+        try:
+            real_names = self._extract_real_layout_names()
+            
+            for layout_index, layout_name in real_names.items():
+                layout_name_lower = layout_name.lower()
+                
+                # Check for team-related layouts
+                if any(word in layout_name_lower for word in ['team', 'meet', 'staff', 'people', 'employee', 'member']):
+                    semantic_map["team"].append(layout_index)
+                    semantic_map["people"].append(layout_index)
+                    semantic_map["staff"].append(layout_index)
+                    logger.debug(f"Layout {layout_index} ('{layout_name}') mapped to team-related content")
+                
+                # Check for about/bio layouts
+                if any(word in layout_name_lower for word in ['about', 'bio', 'profile', 'intro']):
+                    semantic_map["about_us"].append(layout_index)
+                    semantic_map["bios"].append(layout_index)
+                    semantic_map["profiles"].append(layout_index)
+                
+                # Check for timeline/roadmap layouts
+                if any(word in layout_name_lower for word in ['timeline', 'roadmap', 'agenda', 'schedule', 'plan']):
+                    semantic_map["timeline"].append(layout_index)
+                    semantic_map["roadmap"].append(layout_index)
+                    semantic_map["agenda"].append(layout_index)
+                
+                # Check for gallery/portfolio layouts
+                if any(word in layout_name_lower for word in ['gallery', 'portfolio', 'showcase', 'examples']):
+                    semantic_map["gallery"].append(layout_index)
+                    semantic_map["portfolio"].append(layout_index)
+                
+                # Check for process/workflow layouts
+                if any(word in layout_name_lower for word in ['process', 'step', 'workflow', 'procedure']):
+                    semantic_map["process"].append(layout_index)
+                    semantic_map["steps"].append(layout_index)
+                    semantic_map["workflow"].append(layout_index)
+                
+                # Check for comparison layouts
+                if any(word in layout_name_lower for word in ['comparison', 'vs', 'versus', 'compare']):
+                    semantic_map["comparison"].append(layout_index)
+                    semantic_map["vs"].append(layout_index)
+                
+                # Check for feature/benefit layouts
+                if any(word in layout_name_lower for word in ['feature', 'benefit', 'advantage', 'service', 'product']):
+                    semantic_map["features"].append(layout_index)
+                    semantic_map["benefits"].append(layout_index)
+                    semantic_map["services"].append(layout_index)
+                    semantic_map["products"].append(layout_index)
+            
+            # Remove empty mappings
+            semantic_map = {k: v for k, v in semantic_map.items() if v}
+            
+            logger.info(f"Created semantic layout map with {len(semantic_map)} content types mapped to layouts")
+            
+        except Exception as e:
+            logger.error(f"Failed to generate semantic layout map: {e}")
+            
+        return semantic_map
+    
+    def find_layouts_for_content_type(self, content_keywords: List[str]) -> List[int]:
+        """
+        Find layout indices that match given content keywords.
+        
+        Args:
+            content_keywords: List of keywords describing content type
+            
+        Returns:
+            List of layout indices sorted by relevance
+        """
+        matching_layouts = set()
+        
+        try:
+            for keyword in content_keywords:
+                keyword_lower = keyword.lower()
+                
+                # Direct keyword match
+                if keyword_lower in self.semantic_layout_map:
+                    matching_layouts.update(self.semantic_layout_map[keyword_lower])
+                
+                # Fuzzy matching for related terms
+                for semantic_key, layout_indices in self.semantic_layout_map.items():
+                    if keyword_lower in semantic_key or semantic_key in keyword_lower:
+                        matching_layouts.update(layout_indices)
+                        
+            result = list(matching_layouts)
+            
+            if result:
+                logger.debug(f"Found {len(result)} matching layouts for keywords {content_keywords}: {result}")
+            else:
+                logger.debug(f"No semantic matches found for keywords {content_keywords}")
+                
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error finding layouts for content type: {e}")
+            return []
 
     def _classify_layout(self, layout: SlideLayout, index: int) -> str:
         """
