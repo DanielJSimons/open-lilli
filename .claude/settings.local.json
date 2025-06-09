@@ -34,7 +34,22 @@
       "Bash(/home/dsimons/.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg \"PP_PLACEHOLDER\\.\" /home/dsimons/git/open-lilli/open_lilli/slide_assembler.py -n)",
       "Bash(/home/dsimons/.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg \"PP_PLACEHOLDER\\.[A-Z_]+\" /home/dsimons/git/open-lilli/ -r -n)",
       "Bash(/home/dsimons/.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg \"PICTURE|TITLE|BODY|CONTENT|OBJECT|TEXT_BOX\" /home/dsimons/git/open-lilli/open_lilli/slide_assembler.py -n)",
-      "Bash(/home/dsimons/.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg -n \"\\b(18|12|3|2|7)\\b\" open_lilli/slide_assembler.py -C 2)"
+      "Bash(/home/dsimons/.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg -n \"\\b(18|12|3|2|7)\\b\" open_lilli/slide_assembler.py -C 2)",
+      "Bash(/home/dsimons/.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg -n \"def _add_bullet_content|def _add_hierarchical_bullets_to_placeholder|def add_content\" /home/dsimons/git/open-lilli/open_lilli/slide_assembler.py)",
+      "Bash(/home/dsimons/.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg -n \"def.*content|def.*bullet|def.*placeholder\" /home/dsimons/git/open-lilli/open_lilli/slide_assembler.py)",
+      "Bash(/home/dsimons/.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg -n \"def create_slide|def assemble_slides|def _create_.*slide\" /home/dsimons/git/open-lilli/open_lilli/slide_assembler.py)",
+      "Bash(/home/dsimons/.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg -n \"def.*slide\" /home/dsimons/git/open-lilli/open_lilli/slide_assembler.py)",
+      "Bash(/home/dsimons/.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg -n \"def.*placeholder|def.*layout\" /home/dsimons/git/open-lilli/open_lilli/template_parser.py)",
+      "Bash(/home/dsimons/.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg \"def (assemble_presentation|add_content|create_slide|_add_|_create_)\" /home/dsimons/git/open-lilli/open_lilli/slide_assembler.py)",
+      "Bash(/home/dsimons/.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg \"def assemble_presentation\" /home/dsimons/git/open-lilli/open_lilli/slide_assembler.py)",
+      "Bash(/home/dsimons/.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg -A 50 \"def _add_slide\" /home/dsimons/git/open-lilli/open_lilli/slide_assembler.py)",
+      "Bash(/home/dsimons/.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg -A 100 \"elif \\\"chart\\\" in slide_visuals:\" /home/dsimons/git/open-lilli/open_lilli/slide_assembler.py)",
+      "Bash(/home/dsimons/.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg -A 100 'elif \"chart\" in slide_visuals:' /home/dsimons/git/open-lilli/open_lilli/slide_assembler.py)",
+      "Bash(/home/dsimons/.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg -A 30 \"def _add_bullet_content\" /home/dsimons/git/open-lilli/open_lilli/slide_assembler.py)",
+      "Bash(/home/dsimons/.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg -A 30 \"def _add_hierarchical_bullet_content\" /home/dsimons/git/open-lilli/open_lilli/slide_assembler.py)",
+      "Bash(/home/dsimons/.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg -A 30 \"def _create_content_distribution_strategy\" /home/dsimons/git/open-lilli/open_lilli/slide_assembler.py)",
+      "Bash(/home/dsimons/.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg -A 20 \"_distribute_bullets_across_columns\" /home/dsimons/git/open-lilli/open_lilli/slide_assembler.py)",
+      "Bash(/home/dsimons/.nvm/versions/node/v22.14.0/lib/node_modules/@anthropic-ai/claude-code/vendor/ripgrep/x64-linux/rg \"class.*:\" /home/dsimons/git/open-lilli/open_lilli/slide_assembler.py)"
     ],
     "deny": []
   }

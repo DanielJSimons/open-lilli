@@ -81,22 +81,26 @@ class SlidePlanner:
 
     def _define_layout_priorities(self) -> Dict[str, List[str]]:
         """
-        Define layout priorities for different slide types.
+        Define layout priorities for different slide types with better variety.
         
         Returns:
             Dictionary mapping slide types to ordered lists of preferred layouts
         """
         return {
             "title": ["title", "section", "content"],
-            "content": ["content", "content_dense", "two_column", "blank"],
+            "content": ["content", "two_column", "content_dense", "blank"],  # Prioritize variety
             "image": ["image", "image_content", "content", "blank"],
-            "chart": ["content", "image_content", "content_dense", "blank"],
-            "two_column": ["two_column", "content_dense", "content", "blank"],
+            "chart": ["image_content", "content", "content_dense", "two_column", "blank"],  # Better for charts
+            "two_column": ["two_column", "comparison", "content_dense", "content", "blank"],
             "section": ["section", "title", "content"],
             "blank": ["blank", "content"],
-            "comparison": ["comparison", "two_column", "content", "blank"],
-            "content_dense": ["content_dense", "content", "two_column", "blank"],
-            "three_column": ["three_column", "content_dense", "two_column", "blank"]
+            "comparison": ["comparison", "two_column", "three_column", "content_dense", "blank"],
+            "content_dense": ["content_dense", "three_column", "two_column", "content", "blank"],
+            "three_column": ["three_column", "content_dense", "two_column", "comparison", "blank"],
+            # Add content-based patterns
+            "process": ["image_content", "two_column", "content", "blank"],
+            "data": ["content_dense", "two_column", "comparison", "content", "blank"],
+            "overview": ["three_column", "content_dense", "two_column", "content", "blank"]
         }
 
     def plan_slides(
@@ -171,6 +175,12 @@ class SlidePlanner:
         # Start with the original slide data
         planned_slide = slide.model_copy()
         
+        # Enhance slide type based on content analysis before layout selection
+        enhanced_slide_type = self._analyze_content_patterns(planned_slide)
+        if enhanced_slide_type != planned_slide.slide_type:
+            logger.debug(f"Enhanced slide {planned_slide.index} type from '{planned_slide.slide_type}' to '{enhanced_slide_type}'")
+            planned_slide.slide_type = enhanced_slide_type
+        
         # Assign layout using ML or rule-based selection
         layout_recommendation = self._select_layout_with_ml(planned_slide)
         planned_slide.layout_id = layout_recommendation.layout_id
@@ -205,6 +215,50 @@ class SlidePlanner:
             planned_slide.speaker_notes = self._generate_speaker_notes(planned_slide)
         
         return planned_slide
+    
+    def _analyze_content_patterns(self, slide: SlidePlan) -> str:
+        """
+        Analyze slide content to determine the most appropriate slide type.
+        
+        Args:
+            slide: SlidePlan to analyze
+            
+        Returns:
+            Enhanced slide type based on content patterns
+        """
+        title = slide.title.lower()
+        bullets = [bullet.lower() for bullet in slide.get_bullet_texts()]
+        all_content = f"{title} {' '.join(bullets)}"
+        
+        # Pattern detection keywords
+        comparison_words = ['vs', 'versus', 'compared to', 'difference', 'contrast', 'before/after', 'pros and cons']
+        process_words = ['step', 'process', 'workflow', 'procedure', 'method', 'approach', 'strategy']
+        data_words = ['data', 'metrics', 'statistics', 'numbers', 'results', 'performance', 'analysis']
+        overview_words = ['overview', 'summary', 'key points', 'highlights', 'main', 'primary', 'executive']
+        
+        # Count bullet points to assess density
+        bullet_count = len(bullets)
+        
+        # Enhanced pattern matching
+        if any(word in all_content for word in comparison_words) or bullet_count >= 2 and 'comparison' in title:
+            return 'comparison'
+        elif any(word in all_content for word in process_words) or 'flow' in title:
+            return 'process'
+        elif any(word in all_content for word in data_words) or slide.chart_data:
+            return 'data'
+        elif any(word in all_content for word in overview_words) or bullet_count >= 6:
+            return 'overview'
+        elif bullet_count >= 8:  # Very dense content
+            return 'content_dense'
+        elif bullet_count >= 4 and slide.image_query:  # Image with multiple points
+            return 'image_content'
+        elif bullet_count == 0 and slide.image_query:  # Image-focused
+            return 'image'
+        elif 'section' in slide.slide_type or 'intro' in title:
+            return 'section'
+        
+        # Return original slide type if no patterns detected
+        return slide.slide_type
 
     def _select_layout_with_ml(self, slide: SlidePlan) -> 'LayoutRecommendation':
         """
@@ -216,44 +270,63 @@ class SlidePlanner:
         Returns:
             LayoutRecommendation object with layout choice and metadata
         """
-        # Try LLM-based recommendation first if enabled
+        # Try visual analysis-based recommendation first if enabled
         if self.enable_ml_layouts and self.layout_recommender:
             try:
                 # Get available layouts for this template
                 available_layouts = self.template_parser.layout_map
                 
-                # First try LLM-based semantic analysis (T-98)
+                # First try comprehensive visual analysis approach
+                try:
+                    visual_recommendation = self.layout_recommender.recommend_layout_with_visual_analysis(
+                        slide, self.template_parser, available_layouts
+                    )
+                    
+                    # Log the visual analysis recommendation
+                    logger.debug(f"Visual analysis recommendation for slide {slide.index}: "
+                               f"{visual_recommendation.slide_type} (confidence: {visual_recommendation.confidence:.2f})")
+                    
+                    # Use visual analysis recommendation if confidence is reasonable
+                    if visual_recommendation.confidence >= 0.3:  # Lower threshold for visual analysis
+                        return visual_recommendation
+                    else:
+                        logger.debug(f"Visual analysis confidence too low ({visual_recommendation.confidence:.2f}), trying LLM fallback")
+                
+                except Exception as e:
+                    logger.debug(f"Visual analysis layout recommendation failed for slide {slide.index}: {e}")
+                
+                # Fallback to LLM-based semantic analysis if visual analysis fails
                 try:
                     llm_recommendation = self.layout_recommender.recommend_layout_with_llm(
                         slide, available_layouts
                     )
                     
                     # Log the LLM recommendation for debugging
-                    logger.debug(f"LLM recommendation for slide {slide.index}: "
+                    logger.debug(f"LLM fallback recommendation for slide {slide.index}: "
                                f"{llm_recommendation.slide_type} (confidence: {llm_recommendation.confidence:.2f})")
                     
-                    # Use LLM recommendation if confidence is high enough
-                    if llm_recommendation.confidence >= 0.6:  # Threshold for LLM recommendations
+                    # Use LLM recommendation if confidence is reasonable
+                    if llm_recommendation.confidence >= 0.4:
                         return llm_recommendation
                     else:
-                        logger.debug(f"LLM confidence too low ({llm_recommendation.confidence:.2f}), trying ML fallback")
+                        logger.debug(f"LLM confidence too low ({llm_recommendation.confidence:.2f}), trying traditional ML")
                 
                 except Exception as e:
                     logger.debug(f"LLM layout recommendation failed for slide {slide.index}: {e}")
                 
-                # Fallback to traditional ML recommendation if LLM fails or confidence is low
+                # Final fallback to traditional ML recommendation
                 ml_recommendation = self.layout_recommender.recommend_layout(
                     slide, available_layouts
                 )
                 
                 # Log the ML recommendation for debugging
-                logger.debug(f"ML recommendation for slide {slide.index}: "
+                logger.debug(f"Traditional ML recommendation for slide {slide.index}: "
                            f"{ml_recommendation.slide_type} (confidence: {ml_recommendation.confidence:.2f})")
                 
                 return ml_recommendation
                 
             except Exception as e:
-                logger.warning(f"Layout recommendation failed for slide {slide.index}: {e}")
+                logger.warning(f"All ML layout recommendations failed for slide {slide.index}: {e}")
                 # Fall through to rule-based selection
         
         # Use rule-based fallback

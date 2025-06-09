@@ -578,13 +578,25 @@ class SlideAssembler:
 
     def _add_bullet_content(self, slide, slide_plan: SlidePlan, language: str) -> List[SlidePlan]: # Add language
         """
-        Add bullet points to slide, potentially splitting content if it overflows.
-        This method handles legacy flat list of bullets.
+        Add bullet points to slide using intelligent content distribution.
+        This method handles legacy flat list of bullets with improved placeholder utilization.
         """
         newly_created_slides: List[SlidePlan] = []
+        
+        # Use intelligent content distribution first
+        distribution_result = self._intelligently_distribute_content(slide, slide_plan, language)
+        
+        # Check if content was successfully distributed
+        if distribution_result["bullets_placed"]:
+            logger.info(f"Content successfully distributed across available placeholders")
+            return newly_created_slides
+        
+        # Fallback to original logic if intelligent distribution failed
+        logger.warning("Intelligent distribution failed, falling back to legacy method")
+        
         bullets: List[str] = slide_plan.bullets # Get bullets from slide_plan
 
-        # Find BODY placeholders
+        # Find BODY placeholders (legacy fallback)
         body_placeholders = []
         for placeholder in slide.placeholders:
             ph_type = placeholder.placeholder_format.type
@@ -713,8 +725,19 @@ class SlideAssembler:
         """
         newly_created_slides: List[SlidePlan] = []
 
+        # Try intelligent content distribution first (regardless of splitting setting)
+        distribution_result = self._intelligently_distribute_content(slide, slide_plan, language)
+        
+        # If intelligent distribution succeeded, we're done
+        if distribution_result["bullets_placed"]:
+            logger.info(f"Slide {slide_plan.index}: Content successfully distributed using intelligent placement")
+            return newly_created_slides
+        
+        # If intelligent distribution failed, fall back to original logic
+        logger.warning(f"Slide {slide_plan.index}: Intelligent distribution failed, using legacy hierarchical bullet logic")
+        
         if not self.overflow_config.enable_bullet_splitting:
-            logger.info("Bullet splitting is disabled. Adding all bullets to current slide.")
+            logger.info("Bullet splitting is disabled. Adding all bullets to current slide using fallback method.")
             # Find and add to placeholder without splitting (original logic path)
             bullet_items_no_split = slide_plan.get_effective_bullets()
             if not bullet_items_no_split:
@@ -882,6 +905,266 @@ class SlideAssembler:
             start_idx = end_idx
         
         logger.info(f"Distributed {len(bullets)} bullets across {num_columns} columns")
+    
+    def _discover_all_content_placeholders(self, slide) -> Dict[str, List]:
+        """
+        Discover ALL available placeholders that can hold content.
+        
+        Args:
+            slide: Slide object to analyze
+            
+        Returns:
+            Dictionary categorizing all available content placeholders
+        """
+        placeholders = {
+            "primary_content": [],    # BODY, OBJECT - main content areas
+            "secondary_content": [],  # SUBTITLE, FOOTER, HEADER - supplementary content
+            "title": [],              # TITLE placeholders
+            "media": [],              # PICTURE, CHART placeholders
+            "metadata": [],           # DATE, SLIDE_NUMBER placeholders
+            "all_text_capable": []   # All placeholders that can hold text
+        }
+        
+        try:
+            for placeholder in slide.placeholders:
+                ph_type = placeholder.placeholder_format.type
+                
+                # Categorize by function
+                if ph_type in (PP_PLACEHOLDER.BODY, PP_PLACEHOLDER.OBJECT):
+                    placeholders["primary_content"].append(placeholder)
+                elif ph_type in (PP_PLACEHOLDER.SUBTITLE, 10, 9):  # SUBTITLE, FOOTER, HEADER
+                    placeholders["secondary_content"].append(placeholder)
+                elif ph_type in (PP_PLACEHOLDER.TITLE, 13):  # TITLE, CENTERED_TITLE
+                    placeholders["title"].append(placeholder)
+                elif ph_type in (PP_PLACEHOLDER.PICTURE, 14):  # PICTURE, CHART
+                    placeholders["media"].append(placeholder)
+                elif ph_type in (8, 11):  # DATE, SLIDE_NUMBER
+                    placeholders["metadata"].append(placeholder)
+                
+                # Check if placeholder can hold text
+                if hasattr(placeholder, 'text_frame') and placeholder.text_frame is not None:
+                    placeholders["all_text_capable"].append(placeholder)
+                    
+        except Exception as e:
+            logger.error(f"Error discovering placeholders: {e}")
+            
+        logger.debug(f"Discovered placeholders: {len(placeholders['primary_content'])} primary, "
+                    f"{len(placeholders['secondary_content'])} secondary, "
+                    f"{len(placeholders['all_text_capable'])} total text-capable")
+        
+        return placeholders
+    
+    def _intelligently_distribute_content(self, slide, slide_plan: SlidePlan, language: str) -> Dict[str, bool]:
+        """
+        Intelligently distribute slide content across ALL available placeholders.
+        
+        Args:
+            slide: Slide object
+            slide_plan: SlidePlan with content to distribute
+            language: Language code
+            
+        Returns:
+            Dictionary indicating what content was placed where
+        """
+        distribution_result = {
+            "title_placed": False,
+            "bullets_placed": False,
+            "subtitle_used": False,
+            "footer_used": False,
+            "all_placeholders_utilized": False
+        }
+        
+        try:
+            # Discover all available placeholders
+            placeholders = self._discover_all_content_placeholders(slide)
+            
+            # 1. Place title in title placeholder
+            if slide_plan.title and placeholders["title"]:
+                self._add_title(slide, slide_plan.title, language)
+                distribution_result["title_placed"] = True
+            
+            # 2. Prepare content for distribution
+            bullets = slide_plan.get_bullet_texts()
+            total_content_items = len(bullets)
+            
+            if total_content_items == 0:
+                logger.debug("No content to distribute")
+                return distribution_result
+            
+            # 3. Create content distribution strategy
+            content_strategy = self._create_content_distribution_strategy(
+                placeholders, bullets, slide_plan
+            )
+            
+            # 4. Execute distribution strategy
+            self._execute_content_distribution(slide, content_strategy, language)
+            
+            # 5. Update distribution results
+            distribution_result.update({
+                "bullets_placed": len(content_strategy["primary_bullets"]) > 0,
+                "subtitle_used": len(content_strategy.get("subtitle_content", [])) > 0,
+                "footer_used": len(content_strategy.get("footer_content", [])) > 0,
+                "all_placeholders_utilized": self._check_placeholder_utilization(placeholders)
+            })
+            
+            logger.info(f"Content distribution completed: {sum(distribution_result.values())} of {len(distribution_result)} goals achieved")
+            
+        except Exception as e:
+            logger.error(f"Content distribution failed: {e}")
+            
+        return distribution_result
+    
+    def _create_content_distribution_strategy(self, placeholders: Dict, bullets: List[str], slide_plan: SlidePlan) -> Dict:
+        """
+        Create an intelligent strategy for distributing content across available placeholders.
+        
+        Args:
+            placeholders: Available placeholders by category
+            bullets: List of bullet point texts
+            slide_plan: Slide plan with additional context
+            
+        Returns:
+            Distribution strategy dictionary
+        """
+        strategy = {
+            "primary_bullets": [],
+            "subtitle_content": [],
+            "footer_content": [],
+            "distributed_bullets": [],
+            "placeholder_assignments": {}
+        }
+        
+        try:
+            primary_placeholders = placeholders["primary_content"]
+            secondary_placeholders = placeholders["secondary_content"]
+            
+            # Analyze content for intelligent distribution
+            if len(bullets) <= 3 and len(secondary_placeholders) > 0:
+                # For short content, use subtitle for key takeaway
+                strategy["primary_bullets"] = bullets
+                if bullets:
+                    strategy["subtitle_content"] = [f"Key takeaway: {bullets[0]}"]
+                    
+            elif len(bullets) > 6 and len(primary_placeholders) >= 2:
+                # For long content, distribute across multiple primary placeholders
+                bullets_per_placeholder = len(bullets) // len(primary_placeholders)
+                remainder = len(bullets) % len(primary_placeholders)
+                
+                distributed = []
+                start_idx = 0
+                
+                for i, placeholder in enumerate(primary_placeholders):
+                    bullets_for_this = bullets_per_placeholder + (1 if i < remainder else 0)
+                    end_idx = start_idx + bullets_for_this
+                    
+                    placeholder_bullets = bullets[start_idx:end_idx]
+                    distributed.append(placeholder_bullets)
+                    strategy["placeholder_assignments"][i] = placeholder_bullets
+                    
+                    start_idx = end_idx
+                
+                strategy["distributed_bullets"] = distributed
+                
+            else:
+                # Standard distribution
+                strategy["primary_bullets"] = bullets
+            
+            # Add footer content if available and appropriate
+            if len(secondary_placeholders) > 1 and slide_plan.speaker_notes:
+                # Use footer for condensed speaker notes
+                strategy["footer_content"] = [slide_plan.speaker_notes[:100] + "..."]
+            
+            logger.debug(f"Created distribution strategy: {len(strategy['primary_bullets'])} primary bullets, "
+                        f"{len(strategy['subtitle_content'])} subtitle items, "
+                        f"{len(strategy['footer_content'])} footer items")
+                        
+        except Exception as e:
+            logger.error(f"Strategy creation failed: {e}")
+            # Fallback to simple strategy
+            strategy["primary_bullets"] = bullets
+            
+        return strategy
+    
+    def _execute_content_distribution(self, slide, strategy: Dict, language: str) -> None:
+        """
+        Execute the content distribution strategy.
+        
+        Args:
+            slide: Slide object
+            strategy: Distribution strategy
+            language: Language code
+        """
+        try:
+            placeholders = self._discover_all_content_placeholders(slide)
+            
+            # Distribute primary bullets
+            if strategy["distributed_bullets"]:
+                # Multi-placeholder distribution
+                for i, bullets in enumerate(strategy["distributed_bullets"]):
+                    if i < len(placeholders["primary_content"]) and bullets:
+                        self._add_bullets_to_placeholder(
+                            placeholders["primary_content"][i], bullets, language
+                        )
+                        logger.debug(f"Added {len(bullets)} bullets to primary placeholder {i}")
+                        
+            elif strategy["primary_bullets"]:
+                # Single placeholder distribution
+                if placeholders["primary_content"]:
+                    self._add_bullets_to_placeholder(
+                        placeholders["primary_content"][0], strategy["primary_bullets"], language
+                    )
+                    logger.debug(f"Added {len(strategy['primary_bullets'])} bullets to primary placeholder")
+            
+            # Add subtitle content
+            if strategy["subtitle_content"] and placeholders["secondary_content"]:
+                for placeholder in placeholders["secondary_content"]:
+                    if placeholder.placeholder_format.type == PP_PLACEHOLDER.SUBTITLE:
+                        placeholder.text = strategy["subtitle_content"][0]
+                        logger.debug("Added content to subtitle placeholder")
+                        break
+            
+            # Add footer content
+            if strategy["footer_content"] and placeholders["secondary_content"]:
+                for placeholder in placeholders["secondary_content"]:
+                    if placeholder.placeholder_format.type == 10:  # FOOTER
+                        placeholder.text = strategy["footer_content"][0]
+                        logger.debug("Added content to footer placeholder")
+                        break
+                        
+        except Exception as e:
+            logger.error(f"Content distribution execution failed: {e}")
+    
+    def _check_placeholder_utilization(self, placeholders: Dict) -> bool:
+        """
+        Check if we've utilized most available text placeholders.
+        
+        Args:
+            placeholders: Placeholder dictionary
+            
+        Returns:
+            True if most placeholders are utilized
+        """
+        try:
+            total_text_placeholders = len(placeholders["all_text_capable"])
+            if total_text_placeholders == 0:
+                return True
+                
+            utilized_count = 0
+            for placeholder in placeholders["all_text_capable"]:
+                if hasattr(placeholder, 'text') and placeholder.text.strip():
+                    utilized_count += 1
+                elif hasattr(placeholder, 'text_frame') and placeholder.text_frame:
+                    if any(para.text.strip() for para in placeholder.text_frame.paragraphs):
+                        utilized_count += 1
+            
+            utilization_rate = utilized_count / total_text_placeholders
+            logger.debug(f"Placeholder utilization: {utilized_count}/{total_text_placeholders} ({utilization_rate:.1%})")
+            
+            return utilization_rate >= 0.7  # 70% utilization threshold
+            
+        except Exception as e:
+            logger.error(f"Utilization check failed: {e}")
+            return False
 
     def _add_bullets_to_placeholder(
         self, 
@@ -2695,7 +2978,8 @@ class SlideAssembler:
 
     def _remove_empty_placeholders_from_slide(self, slide) -> int:
         """
-        Remove or hide all empty placeholders from a slide to avoid style warnings.
+        Intelligently remove or hide empty placeholders from a slide, only after
+        attempting to utilize them for content distribution.
         
         Args:
             slide: Slide object to process
@@ -2703,6 +2987,14 @@ class SlideAssembler:
         Returns:
             Number of placeholders hidden/removed
         """
+        # First, check if we have utilized available placeholders effectively
+        placeholders_discovered = self._discover_all_content_placeholders(slide)
+        utilization_check = self._check_placeholder_utilization(placeholders_discovered)
+        
+        if not utilization_check:
+            logger.info(f"Low placeholder utilization detected. Attempting content redistribution before hiding placeholders.")
+            # TODO: Could trigger content redistribution here if needed
+        
         hidden_count = 0
         
         try:

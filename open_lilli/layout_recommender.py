@@ -3,6 +3,7 @@
 import json
 import logging
 import pickle
+import re
 import time
 from datetime import datetime
 from pathlib import Path
@@ -42,6 +43,224 @@ class LayoutRecommender:
         self.load_vector_store()
         
         logger.info(f"LayoutRecommender initialized with {len(self.embeddings_cache)} embeddings")
+    
+    def recommend_layout_with_visual_analysis(self, slide: SlidePlan, template_parser, available_layouts: Dict[str, int]) -> LayoutRecommendation:
+        """
+        Use LLM to select the best layout based on comprehensive visual analysis of templates.
+        
+        Args:
+            slide: SlidePlan to get layout recommendation for
+            template_parser: TemplateParser with visual analysis capabilities
+            available_layouts: Dictionary of available layout names to indices
+            
+        Returns:
+            LayoutRecommendation with visual analysis-based selection
+        """
+        try:
+            # Get comprehensive layout descriptions
+            layout_descriptions = template_parser.create_layout_descriptions_for_llm()
+            
+            # Create slide content summary
+            slide_summary = self._create_slide_content_summary(slide)
+            
+            # Build LLM prompt
+            prompt = self._build_visual_layout_selection_prompt(slide_summary, layout_descriptions)
+            
+            # Get LLM recommendation
+            response = self.client.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {"role": "system", "content": "You are an expert presentation designer with deep knowledge of visual layout principles and user experience. Analyze the provided slide content and template layouts to recommend the most appropriate layout."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.1,
+                max_tokens=300
+            )
+            
+            # Parse LLM response
+            recommendation = self._parse_visual_layout_response(response.choices[0].message.content, available_layouts)
+            
+            logger.debug(f"Visual analysis recommendation for slide {slide.index}: {recommendation.slide_type} (confidence: {recommendation.confidence:.2f})")
+            return recommendation
+            
+        except Exception as e:
+            logger.error(f"Visual layout analysis failed for slide {slide.index}: {e}")
+            # Fallback to basic recommendation
+            return self._create_fallback_recommendation(slide, available_layouts)
+    
+    def _create_slide_content_summary(self, slide: SlidePlan) -> str:
+        """
+        Create a comprehensive summary of slide content for layout selection.
+        
+        Args:
+            slide: SlidePlan to summarize
+            
+        Returns:
+            Detailed content summary string
+        """
+        summary_parts = [
+            f"SLIDE TITLE: {slide.title}",
+            f"SLIDE TYPE: {slide.slide_type}"
+        ]
+        
+        # Add bullet points analysis
+        bullets = slide.get_bullet_texts()
+        if bullets:
+            bullet_count = len(bullets)
+            avg_length = sum(len(bullet) for bullet in bullets) / bullet_count
+            
+            summary_parts.append(f"CONTENT: {bullet_count} bullet points (avg {avg_length:.0f} chars each)")
+            
+            # Sample bullets for context
+            if bullet_count <= 3:
+                summary_parts.append(f"BULLETS: {'; '.join(bullets)}")
+            else:
+                summary_parts.append(f"BULLETS: {'; '.join(bullets[:2])}... and {bullet_count-2} more")
+        else:
+            summary_parts.append("CONTENT: No bullet points")
+        
+        # Add media information
+        media_elements = []
+        if slide.image_query:
+            media_elements.append("image")
+        if slide.chart_data:
+            media_elements.append("chart/data visualization")
+        
+        if media_elements:
+            summary_parts.append(f"MEDIA: {', '.join(media_elements)}")
+        else:
+            summary_parts.append("MEDIA: Text-only")
+        
+        # Add speaker notes if available
+        if slide.speaker_notes:
+            summary_parts.append(f"NOTES: {slide.speaker_notes[:100]}...")
+        
+        return " | ".join(summary_parts)
+    
+    def _build_visual_layout_selection_prompt(self, slide_summary: str, layout_descriptions: Dict[str, str]) -> str:
+        """
+        Build a comprehensive prompt for LLM layout selection.
+        
+        Args:
+            slide_summary: Summary of slide content
+            layout_descriptions: Detailed descriptions of available layouts
+            
+        Returns:
+            Complete prompt string
+        """
+        prompt_parts = [
+            "Analyze the slide content and recommend the most appropriate template layout.",
+            "",
+            "SLIDE TO DESIGN:",
+            slide_summary,
+            "",
+            "AVAILABLE TEMPLATE LAYOUTS:"
+        ]
+        
+        # Add layout descriptions
+        for layout_name, description in layout_descriptions.items():
+            prompt_parts.append(f"• {layout_name}: {description}")
+        
+        prompt_parts.extend([
+            "",
+            "SELECTION CRITERIA:",
+            "1. Content fit: Does the layout accommodate the amount and type of content?",
+            "2. Visual hierarchy: Does the layout support clear information flow?",
+            "3. Media integration: Does the layout properly integrate images/charts if needed?",
+            "4. Purpose alignment: Does the layout match the slide's communication goal?",
+            "5. Professional appearance: Does the layout create a polished, readable result?",
+            "",
+            "Respond with this exact format:",
+            "RECOMMENDED_LAYOUT: [layout_name]",
+            "CONFIDENCE: [0.0-1.0]",
+            "REASONING: [2-3 sentences explaining why this layout is best]"
+        ])
+        
+        return "\n".join(prompt_parts)
+    
+    def _parse_visual_layout_response(self, response: str, available_layouts: Dict[str, int]) -> LayoutRecommendation:
+        """
+        Parse LLM response and create LayoutRecommendation.
+        
+        Args:
+            response: LLM response text
+            available_layouts: Available layout mappings
+            
+        Returns:
+            LayoutRecommendation object
+        """
+        try:
+            # Extract recommended layout
+            layout_match = re.search(r'RECOMMENDED_LAYOUT:\s*([^\n]+)', response, re.IGNORECASE)
+            recommended_layout = layout_match.group(1).strip() if layout_match else None
+            
+            # Extract confidence
+            confidence_match = re.search(r'CONFIDENCE:\s*([0-9.]+)', response, re.IGNORECASE)
+            confidence = float(confidence_match.group(1)) if confidence_match else 0.5
+            
+            # Extract reasoning
+            reasoning_match = re.search(r'REASONING:\s*([^\n]+(?:\n[^\n]+)*)', response, re.IGNORECASE)
+            reasoning = reasoning_match.group(1).strip() if reasoning_match else "Visual analysis recommendation"
+            
+            # Validate layout exists
+            if recommended_layout and recommended_layout in available_layouts:
+                layout_id = available_layouts[recommended_layout]
+                
+                return LayoutRecommendation(
+                    slide_type=recommended_layout,
+                    layout_id=layout_id,
+                    confidence=min(max(confidence, 0.0), 1.0),  # Clamp to 0-1
+                    reasoning=f"Visual analysis: {reasoning}",
+                    similar_slides=[],
+                    fallback_used=False
+                )
+            else:
+                # Layout not found, use fallback
+                logger.warning(f"LLM recommended unknown layout '{recommended_layout}', using fallback")
+                fallback_layout = list(available_layouts.keys())[0] if available_layouts else "content"
+                
+                return LayoutRecommendation(
+                    slide_type=fallback_layout,
+                    layout_id=available_layouts.get(fallback_layout, 0),
+                    confidence=0.3,
+                    reasoning=f"Fallback: LLM recommended unknown layout '{recommended_layout}'",
+                    similar_slides=[],
+                    fallback_used=True
+                )
+                
+        except Exception as e:
+            logger.error(f"Failed to parse visual layout response: {e}")
+            return self._create_fallback_recommendation(None, available_layouts)
+    
+    def _create_fallback_recommendation(self, slide: Optional[SlidePlan], available_layouts: Dict[str, int]) -> LayoutRecommendation:
+        """
+        Create a fallback recommendation when visual analysis fails.
+        
+        Args:
+            slide: Optional slide plan
+            available_layouts: Available layout mappings
+            
+        Returns:
+            Fallback LayoutRecommendation
+        """
+        fallback_layout = "content"  # Safe default
+        
+        # Try to find a reasonable fallback
+        if "content" in available_layouts:
+            fallback_layout = "content"
+        elif "title" in available_layouts and slide and slide.slide_type == "title":
+            fallback_layout = "title"
+        elif available_layouts:
+            fallback_layout = list(available_layouts.keys())[0]
+        
+        return LayoutRecommendation(
+            slide_type=fallback_layout,
+            layout_id=available_layouts.get(fallback_layout, 0),
+            confidence=0.2,
+            reasoning="Fallback recommendation due to analysis failure",
+            similar_slides=[],
+            fallback_used=True
+        )
 
     def create_slide_embedding(
         self, 

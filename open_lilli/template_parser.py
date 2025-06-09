@@ -122,24 +122,39 @@ class TemplateParser:
                     f"title:{title_count}, content:{content_count}, "
                     f"subtitle:{subtitle_count}, picture:{picture_count}")
         
-        # Classification logic
+        # Enhanced classification logic with more layout types
         if title_count >= 1 and subtitle_count >= 1 and total_placeholders <= 3:
             return "title"
+        elif title_count >= 1 and content_count >= 3:
+            return "three_column"
         elif title_count >= 1 and content_count >= 2:
-            return "two_column"
+            # Check if it's a comparison layout based on placeholder positioning
+            if total_placeholders >= 4:  # Title + 2+ content + possibly other elements
+                return "comparison"
+            else:
+                return "two_column"
         elif title_count >= 1 and picture_count >= 1 and content_count >= 1:
             return "image_content"
         elif title_count >= 1 and picture_count >= 1:
             return "image"
         elif title_count >= 1 and content_count == 1:
-            return "content"
+            # Distinguish between regular content and dense content layouts
+            if total_placeholders >= 3:  # Title + content + additional elements
+                return "content_dense"
+            else:
+                return "content"
         elif title_count >= 1 and content_count == 0 and total_placeholders <= 2:
             return "section"
         elif total_placeholders == 0:
             return "blank"
         else:
-            # Fallback to generic naming
-            return f"layout_{index}"
+            # Try to infer from total placeholder count
+            if total_placeholders >= 5:
+                return "content_dense"
+            elif total_placeholders == 4:
+                return "two_column"
+            else:
+                return "content"  # Better default than generic naming
 
     def _ensure_basic_layouts(self, layout_map: Dict[str, int]) -> None:
         """Ensure we have mappings for essential layout types."""
@@ -315,6 +330,527 @@ class TemplateParser:
                 analysis["has_chart"] = True
         
         return analysis
+    
+    def extract_complete_layout_visual_data(self, layout: SlideLayout, layout_index: int) -> Dict:
+        """
+        Extract comprehensive visual layout information including all shapes, positioning,
+        and spatial relationships for LLM-based template selection.
+        
+        Args:
+            layout: SlideLayout to analyze
+            layout_index: Index of the layout
+            
+        Returns:
+            Complete visual analysis including shapes, relationships, and design patterns
+        """
+        try:
+            visual_data = {
+                "layout_index": layout_index,
+                "layout_name": getattr(layout, 'name', f"Layout_{layout_index}"),
+                "shapes": self._extract_all_shapes(layout),
+                "spatial_analysis": self._analyze_spatial_relationships(layout),
+                "design_patterns": self._detect_design_patterns(layout),
+                "content_zones": self._map_content_zones(layout),
+                "visual_summary": self._generate_visual_summary(layout),
+                "recommended_content_types": self._infer_content_types(layout)
+            }
+            
+            logger.debug(f"Extracted visual data for layout {layout_index}: {len(visual_data['shapes']['all_shapes'])} total shapes")
+            return visual_data
+            
+        except Exception as e:
+            logger.error(f"Failed to extract visual data for layout {layout_index}: {e}")
+            return {"layout_index": layout_index, "error": str(e)}
+    
+    def _extract_all_shapes(self, layout: SlideLayout) -> Dict:
+        """Extract all shapes from layout with complete visual information."""
+        shapes_data = {
+            "all_shapes": [],
+            "placeholders": [],
+            "text_elements": [],
+            "visual_elements": [],
+            "background_elements": []
+        }
+        
+        try:
+            for shape in layout.shapes:
+                shape_info = {
+                    "id": getattr(shape, 'shape_id', None),
+                    "type": str(shape.shape_type),
+                    "name": getattr(shape, 'name', ''),
+                    "position": {
+                        "left": shape.left,
+                        "top": shape.top,
+                        "width": shape.width,
+                        "height": shape.height,
+                        "center_x": shape.left + shape.width // 2,
+                        "center_y": shape.top + shape.height // 2
+                    },
+                    "visual_properties": self._extract_shape_visual_properties(shape),
+                    "content_type": self._classify_shape_content(shape)
+                }
+                
+                shapes_data["all_shapes"].append(shape_info)
+                
+                # Categorize shapes
+                if hasattr(shape, 'placeholder_format'):
+                    shape_info["placeholder_type"] = shape.placeholder_format.type
+                    shapes_data["placeholders"].append(shape_info)
+                elif hasattr(shape, 'text_frame') and shape.text_frame:
+                    shapes_data["text_elements"].append(shape_info)
+                elif shape.shape_type in [MSO_SHAPE_TYPE.PICTURE, MSO_SHAPE_TYPE.AUTO_SHAPE, MSO_SHAPE_TYPE.FREEFORM]:
+                    shapes_data["visual_elements"].append(shape_info)
+                else:
+                    shapes_data["background_elements"].append(shape_info)
+                    
+        except Exception as e:
+            logger.warning(f"Error extracting shapes: {e}")
+            
+        return shapes_data
+    
+    def _extract_shape_visual_properties(self, shape) -> Dict:
+        """Extract visual styling properties from a shape."""
+        properties = {"fill": None, "line": None, "effects": None}
+        
+        try:
+            # Fill properties
+            if hasattr(shape, 'fill'):
+                fill = shape.fill
+                if hasattr(fill, 'type') and fill.type:
+                    properties["fill"] = {
+                        "type": str(fill.type),
+                        "color": self._extract_color_info(fill) if hasattr(fill, 'fore_color') else None
+                    }
+            
+            # Line properties
+            if hasattr(shape, 'line'):
+                line = shape.line
+                properties["line"] = {
+                    "color": self._extract_color_info(line) if hasattr(line, 'color') else None,
+                    "width": getattr(line, 'width', None)
+                }
+                
+        except Exception as e:
+            logger.debug(f"Could not extract visual properties: {e}")
+            
+        return properties
+    
+    def _extract_color_info(self, color_obj) -> Optional[str]:
+        """Extract color information as hex string."""
+        try:
+            if hasattr(color_obj, 'rgb'):
+                rgb = color_obj.rgb
+                return f"#{rgb.red:02x}{rgb.green:02x}{rgb.blue:02x}"
+        except:
+            pass
+        return None
+    
+    def _classify_shape_content(self, shape) -> str:
+        """Classify what type of content this shape is intended for."""
+        if hasattr(shape, 'placeholder_format'):
+            ph_type = shape.placeholder_format.type
+            if ph_type in (1, 13):  # TITLE types
+                return "title"
+            elif ph_type in (2, 7):  # BODY, OBJECT
+                return "content"
+            elif ph_type == 18:  # PICTURE
+                return "image"
+            elif ph_type == 14:  # CHART
+                return "chart"
+            else:
+                return f"placeholder_{ph_type}"
+        elif hasattr(shape, 'text_frame') and shape.text_frame:
+            return "text"
+        elif shape.shape_type == MSO_SHAPE_TYPE.PICTURE:
+            return "image"
+        else:
+            return "decoration"
+    
+    def _analyze_spatial_relationships(self, layout: SlideLayout) -> Dict:
+        """Analyze how shapes relate spatially to understand layout structure."""
+        shapes = list(layout.shapes)
+        
+        return {
+            "alignment_patterns": self._detect_alignment_patterns(shapes),
+            "layout_grid": self._detect_grid_structure(shapes),
+            "content_zones": self._identify_content_zones(shapes),
+            "visual_balance": self._analyze_visual_balance(shapes)
+        }
+    
+    def _detect_alignment_patterns(self, shapes) -> Dict:
+        """Detect common alignment patterns in the layout."""
+        left_edges = [shape.left for shape in shapes]
+        top_edges = [shape.top for shape in shapes]
+        
+        # Group shapes by similar positions (within tolerance)
+        tolerance = 50000  # EMUs (about 1.8 inches)
+        
+        aligned_left = self._group_by_proximity(left_edges, tolerance)
+        aligned_top = self._group_by_proximity(top_edges, tolerance)
+        
+        return {
+            "vertical_alignments": len(aligned_left),
+            "horizontal_alignments": len(aligned_top),
+            "has_center_alignment": self._check_center_alignment(shapes),
+            "has_grid_layout": len(aligned_left) > 1 and len(aligned_top) > 1
+        }
+    
+    def _group_by_proximity(self, values: List[int], tolerance: int) -> List[List[int]]:
+        """Group values that are within tolerance of each other."""
+        groups = []
+        sorted_values = sorted(values)
+        
+        current_group = [sorted_values[0]] if sorted_values else []
+        
+        for value in sorted_values[1:]:
+            if abs(value - current_group[-1]) <= tolerance:
+                current_group.append(value)
+            else:
+                if len(current_group) > 1:  # Only count as group if multiple items
+                    groups.append(current_group)
+                current_group = [value]
+        
+        if len(current_group) > 1:
+            groups.append(current_group)
+            
+        return groups
+    
+    def _check_center_alignment(self, shapes) -> bool:
+        """Check if shapes are center-aligned."""
+        try:
+            slide_width = self.prs.slide_width
+            centers = [shape.left + shape.width // 2 for shape in shapes]
+            slide_center = slide_width // 2
+            
+            # Check if any shapes are close to slide center
+            tolerance = slide_width // 10  # 10% tolerance
+            return any(abs(center - slide_center) < tolerance for center in centers)
+        except:
+            return False
+    
+    def _detect_grid_structure(self, shapes) -> Dict:
+        """Detect if layout follows a grid structure."""
+        try:
+            # Analyze placeholder positions to infer grid
+            placeholders = [s for s in shapes if hasattr(s, 'placeholder_format')]
+            
+            if len(placeholders) < 2:
+                return {"type": "single", "columns": 1, "rows": 1}
+            
+            # Group by horizontal position (columns)
+            left_positions = [p.left for p in placeholders]
+            unique_lefts = sorted(set(left_positions))
+            
+            # Group by vertical position (rows)  
+            top_positions = [p.top for p in placeholders]
+            unique_tops = sorted(set(top_positions))
+            
+            cols = len(unique_lefts)
+            rows = len(unique_tops)
+            
+            grid_type = "single"
+            if cols > 1 and rows == 1:
+                grid_type = "horizontal"
+            elif cols == 1 and rows > 1:
+                grid_type = "vertical"
+            elif cols > 1 and rows > 1:
+                grid_type = "grid"
+                
+            return {
+                "type": grid_type,
+                "columns": cols,
+                "rows": rows,
+                "total_cells": len(placeholders)
+            }
+            
+        except Exception as e:
+            logger.debug(f"Grid detection failed: {e}")
+            return {"type": "unknown", "columns": 1, "rows": 1}
+    
+    def _detect_design_patterns(self, layout: SlideLayout) -> Dict:
+        """Detect common design patterns and layout intentions."""
+        shapes = list(layout.shapes)
+        placeholders = [s for s in shapes if hasattr(s, 'placeholder_format')]
+        
+        patterns = {
+            "layout_style": "unknown",
+            "content_orientation": "mixed",
+            "visual_complexity": "medium",
+            "primary_purpose": "general"
+        }
+        
+        try:
+            # Determine layout style
+            if len(placeholders) <= 2:
+                patterns["layout_style"] = "minimal"
+            elif len(placeholders) >= 5:
+                patterns["layout_style"] = "complex"
+            else:
+                patterns["layout_style"] = "standard"
+            
+            # Analyze content orientation
+            title_shapes = [s for s in placeholders if hasattr(s, 'placeholder_format') and s.placeholder_format.type in (1, 13)]
+            content_shapes = [s for s in placeholders if hasattr(s, 'placeholder_format') and s.placeholder_format.type in (2, 7)]
+            
+            if len(content_shapes) > 1:
+                # Check if content is arranged horizontally or vertically
+                content_tops = [s.top for s in content_shapes]
+                content_lefts = [s.left for s in content_shapes]
+                
+                if max(content_tops) - min(content_tops) > max(content_lefts) - min(content_lefts):
+                    patterns["content_orientation"] = "vertical"
+                else:
+                    patterns["content_orientation"] = "horizontal"
+            
+            # Determine primary purpose
+            image_placeholders = [s for s in placeholders if hasattr(s, 'placeholder_format') and s.placeholder_format.type == 18]
+            
+            if len(image_placeholders) > 0 and len(content_shapes) > 0:
+                patterns["primary_purpose"] = "image_content"
+            elif len(image_placeholders) > 0:
+                patterns["primary_purpose"] = "image_focused"
+            elif len(content_shapes) > 2:
+                patterns["primary_purpose"] = "content_heavy"
+            elif len(content_shapes) == 0:
+                patterns["primary_purpose"] = "title_only"
+            else:
+                patterns["primary_purpose"] = "balanced"
+                
+        except Exception as e:
+            logger.debug(f"Pattern detection failed: {e}")
+            
+        return patterns
+    
+    def _map_content_zones(self, layout: SlideLayout) -> Dict:
+        """Map out distinct content zones in the layout."""
+        try:
+            slide_width = self.prs.slide_width
+            slide_height = self.prs.slide_height
+            
+            zones = {
+                "header": [],
+                "main_content": [],
+                "sidebar": [],
+                "footer": []
+            }
+            
+            for shape in layout.shapes:
+                if hasattr(shape, 'placeholder_format'):
+                    # Classify zone based on position
+                    rel_top = shape.top / slide_height
+                    rel_left = shape.left / slide_width
+                    rel_width = shape.width / slide_width
+                    
+                    shape_data = {
+                        "type": shape.placeholder_format.type,
+                        "position": (rel_left, rel_top),
+                        "size": (rel_width, shape.height / slide_height)
+                    }
+                    
+                    if rel_top < 0.2:  # Top 20%
+                        zones["header"].append(shape_data)
+                    elif rel_top > 0.8:  # Bottom 20%
+                        zones["footer"].append(shape_data)
+                    elif rel_left > 0.7:  # Right 30%
+                        zones["sidebar"].append(shape_data)
+                    else:
+                        zones["main_content"].append(shape_data)
+                        
+            return zones
+            
+        except Exception as e:
+            logger.debug(f"Zone mapping failed: {e}")
+            return {"header": [], "main_content": [], "sidebar": [], "footer": []}
+    
+    def _generate_visual_summary(self, layout: SlideLayout) -> str:
+        """Generate a human-readable description of the layout for LLM analysis."""
+        try:
+            shapes = list(layout.shapes)
+            placeholders = [s for s in shapes if hasattr(s, 'placeholder_format')]
+            
+            # Count different types
+            title_count = len([s for s in placeholders if s.placeholder_format.type in (1, 13)])
+            content_count = len([s for s in placeholders if s.placeholder_format.type in (2, 7)])
+            image_count = len([s for s in placeholders if s.placeholder_format.type == 18])
+            
+            # Analyze layout structure
+            grid_info = self._detect_grid_structure(shapes)
+            patterns = self._detect_design_patterns(layout)
+            
+            # Generate description
+            summary_parts = []
+            
+            if title_count > 0:
+                summary_parts.append(f"{title_count} title area{'s' if title_count > 1 else ''}")
+            
+            if content_count > 0:
+                if content_count == 1:
+                    summary_parts.append("single content area")
+                elif content_count == 2:
+                    summary_parts.append("two-column content layout")
+                else:
+                    summary_parts.append(f"{content_count}-column content layout")
+            
+            if image_count > 0:
+                summary_parts.append(f"{image_count} image placeholder{'s' if image_count > 1 else ''}")
+            
+            layout_desc = f"Layout with {', '.join(summary_parts)}" if summary_parts else "Minimal layout"
+            
+            # Add structural information
+            if grid_info["type"] != "single":
+                layout_desc += f", arranged in {grid_info['type']} structure ({grid_info['columns']}x{grid_info['rows']})"
+            
+            # Add design pattern
+            layout_desc += f", {patterns['layout_style']} style, optimized for {patterns['primary_purpose']} content"
+            
+            return layout_desc
+            
+        except Exception as e:
+            logger.debug(f"Summary generation failed: {e}")
+            return "Layout analysis unavailable"
+    
+    def _infer_content_types(self, layout: SlideLayout) -> List[str]:
+        """Infer what types of content this layout is best suited for."""
+        try:
+            shapes = list(layout.shapes)
+            placeholders = [s for s in shapes if hasattr(s, 'placeholder_format')]
+            
+            content_types = []
+            
+            # Analyze placeholder composition
+            title_count = len([s for s in placeholders if s.placeholder_format.type in (1, 13)])
+            content_count = len([s for s in placeholders if s.placeholder_format.type in (2, 7)])
+            image_count = len([s for s in placeholders if s.placeholder_format.type == 18])
+            
+            if content_count >= 3:
+                content_types.extend(["comparison", "detailed_analysis", "multi_point_discussion"])
+            elif content_count == 2:
+                content_types.extend(["comparison", "before_after", "two_column_data"])
+            elif content_count == 1:
+                if image_count > 0:
+                    content_types.extend(["image_explanation", "process_diagram", "visual_content"])
+                else:
+                    content_types.extend(["bullet_points", "key_messages", "overview"])
+            
+            if image_count > 0 and content_count == 0:
+                content_types.extend(["image_showcase", "visual_impact", "photo_gallery"])
+            
+            if title_count > 0 and content_count == 0 and image_count == 0:
+                content_types.extend(["section_divider", "title_slide", "chapter_intro"])
+                
+            return content_types[:5]  # Limit to top 5 recommendations
+            
+        except Exception as e:
+            logger.debug(f"Content type inference failed: {e}")
+            return ["general_content"]
+    
+    def create_layout_descriptions_for_llm(self) -> Dict[str, str]:
+        """
+        Create detailed descriptions of all layouts for LLM-based template selection.
+        
+        Returns:
+            Dictionary mapping layout names to detailed descriptions
+        """
+        layout_descriptions = {}
+        
+        try:
+            for i, layout in enumerate(self.prs.slide_layouts):
+                # Extract comprehensive visual data
+                visual_data = self.extract_complete_layout_visual_data(layout, i)
+                
+                # Create semantic layout name
+                semantic_name = self._classify_layout(layout, i)
+                
+                # Generate detailed description for LLM
+                description = self._create_detailed_layout_description(visual_data, semantic_name)
+                
+                layout_descriptions[semantic_name] = description
+                
+                logger.debug(f"Created description for layout {i} ({semantic_name}): {len(description)} chars")
+                
+        except Exception as e:
+            logger.error(f"Failed to create layout descriptions: {e}")
+            
+        return layout_descriptions
+    
+    def _create_detailed_layout_description(self, visual_data: Dict, semantic_name: str) -> str:
+        """
+        Create a detailed, structured description of a layout for LLM analysis.
+        
+        Args:
+            visual_data: Complete visual analysis data
+            semantic_name: Semantic name of the layout
+            
+        Returns:
+            Detailed description string
+        """
+        try:
+            if "error" in visual_data:
+                return f"Layout {semantic_name}: Analysis failed - {visual_data['error']}"
+            
+            description_parts = [
+                f"LAYOUT: {semantic_name}",
+                f"VISUAL SUMMARY: {visual_data.get('visual_summary', 'No summary available')}",
+            ]
+            
+            # Add shape inventory
+            shapes = visual_data.get('shapes', {})
+            if shapes:
+                total_shapes = len(shapes.get('all_shapes', []))
+                placeholders = len(shapes.get('placeholders', []))
+                visual_elements = len(shapes.get('visual_elements', []))
+                
+                description_parts.append(
+                    f"ELEMENTS: {total_shapes} total shapes ({placeholders} placeholders, {visual_elements} visual elements)"
+                )
+            
+            # Add spatial analysis
+            spatial = visual_data.get('spatial_analysis', {})
+            if spatial:
+                grid = spatial.get('layout_grid', {})
+                alignment = spatial.get('alignment_patterns', {})
+                
+                grid_desc = f"{grid.get('type', 'unknown')} layout"
+                if grid.get('columns', 1) > 1 or grid.get('rows', 1) > 1:
+                    grid_desc += f" ({grid.get('columns', 1)}x{grid.get('rows', 1)} grid)"
+                
+                description_parts.append(f"STRUCTURE: {grid_desc}")
+                
+                if alignment.get('has_center_alignment'):
+                    description_parts.append("ALIGNMENT: Center-aligned elements")
+                elif alignment.get('vertical_alignments', 0) > 1:
+                    description_parts.append("ALIGNMENT: Vertical column structure")
+            
+            # Add design patterns
+            patterns = visual_data.get('design_patterns', {})
+            if patterns:
+                style = patterns.get('layout_style', 'unknown')
+                purpose = patterns.get('primary_purpose', 'general')
+                orientation = patterns.get('content_orientation', 'mixed')
+                
+                description_parts.append(f"STYLE: {style} complexity, {purpose} purpose, {orientation} orientation")
+            
+            # Add recommended content types
+            content_types = visual_data.get('recommended_content_types', [])
+            if content_types:
+                description_parts.append(f"BEST FOR: {', '.join(content_types[:3])}")
+            
+            # Add content zones
+            zones = visual_data.get('content_zones', {})
+            if zones:
+                zone_summary = []
+                for zone_name, zone_content in zones.items():
+                    if zone_content:
+                        zone_summary.append(f"{zone_name}({len(zone_content)})")
+                
+                if zone_summary:
+                    description_parts.append(f"ZONES: {', '.join(zone_summary)}")
+            
+            return " | ".join(description_parts)
+            
+        except Exception as e:
+            logger.error(f"Failed to create detailed description: {e}")
+            return f"Layout {semantic_name}: Description generation failed"
 
     def get_theme_color(self, color_name: str) -> str:
         """
