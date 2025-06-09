@@ -159,7 +159,7 @@ class SlidePlanner:
             logger.info(f"LLM enhanced slide {planned_slide.index} type from '{planned_slide.slide_type}' to '{enhanced_slide_type}'")
             planned_slide.slide_type = enhanced_slide_type
         
-        # Assign layout using ML or rule-based selection
+        # Use template-driven approach: select layout first, then adapt content
         layout_recommendation = self._select_layout_with_ml(planned_slide)
         planned_slide.layout_id = layout_recommendation.layout_id
         
@@ -169,6 +169,10 @@ class SlidePlanner:
         else:
             # Add as a custom attribute for debugging
             planned_slide.__dict__['ml_recommendation'] = layout_recommendation
+        
+        # CRITICAL: Now adapt content to fit the selected template's structure
+        adapted_slide = self._adapt_content_to_template(planned_slide)
+        planned_slide = adapted_slide
         
         # Mark slides that need splitting - removal of hard truncation (T-100: Support hierarchical bullets)
         bullet_texts = planned_slide.get_bullet_texts()
@@ -283,6 +287,551 @@ class SlidePlanner:
         summary_parts.append(f"SLIDE_INDEX: {slide.index}")
         
         return " | ".join(summary_parts)
+    
+    def _adapt_content_to_template(self, slide_plan: SlidePlan) -> SlidePlan:
+        """
+        Adapt slide content to fit the selected template's structure and expectations.
+        This is the core of template-driven content planning.
+        
+        Args:
+            slide_plan: Original slide plan with selected layout_id
+            
+        Returns:
+            Adapted slide plan with content structured for the template
+        """
+        try:
+            if not self.layout_recommender or not self.enable_ml_layouts:
+                logger.debug("LLM not available for content adaptation, using original content")
+                return slide_plan
+            
+            # Get the selected template layout
+            layout_index = slide_plan.layout_id or 0
+            if layout_index >= len(self.template_parser.prs.slide_layouts):
+                logger.warning(f"Invalid layout index {layout_index}, using original content")
+                return slide_plan
+            
+            selected_layout = self.template_parser.prs.slide_layouts[layout_index]
+            
+            # Analyze the template's intended content structure
+            template_intent = self._analyze_template_intent(selected_layout, layout_index)
+            
+            # Adapt content to match template expectations
+            adapted_content = self._generate_template_adapted_content(slide_plan, template_intent)
+            
+            # Create new slide plan with adapted content
+            adapted_slide = slide_plan.model_copy()
+            
+            # Apply adapted content
+            if adapted_content.get('title'):
+                adapted_slide.title = adapted_content['title']
+            if adapted_content.get('bullets'):
+                adapted_slide.bullets = adapted_content['bullets']
+                adapted_slide.bullet_hierarchy = None  # Clear hierarchy if using bullets
+            if adapted_content.get('bullet_hierarchy'):
+                adapted_slide.bullet_hierarchy = adapted_content['bullet_hierarchy']
+                adapted_slide.bullets = []  # Clear legacy bullets
+            
+            # Add template-specific content
+            if adapted_content.get('subtitle'):
+                adapted_slide.__dict__['template_subtitle'] = adapted_content['subtitle']
+            if adapted_content.get('footer'):
+                adapted_slide.__dict__['template_footer'] = adapted_content['footer']
+            if adapted_content.get('additional_content'):
+                adapted_slide.__dict__['template_additional'] = adapted_content['additional_content']
+            
+            logger.info(f"Adapted content for slide {slide_plan.index} to template structure")
+            return adapted_slide
+            
+        except Exception as e:
+            logger.error(f"Content adaptation failed for slide {slide_plan.index}: {e}")
+            return slide_plan
+    
+    def _analyze_template_intent(self, layout: 'SlideLayout', layout_index: int) -> Dict[str, any]:
+        """
+        Analyze the template layout to understand its intended content structure and purpose.
+        This is the foundation of template-driven content planning.
+        
+        Args:
+            layout: The selected SlideLayout object
+            layout_index: Index of the layout
+            
+        Returns:
+            Dictionary containing template intent analysis
+        """
+        try:
+            if not self.layout_recommender or not self.enable_ml_layouts:
+                logger.debug("LLM not available for template intent analysis, using basic analysis")
+                return self._basic_template_intent_analysis(layout, layout_index)
+            
+            # Get comprehensive visual analysis from template parser
+            visual_data = self.template_parser.extract_complete_layout_visual_data(layout, layout_index)
+            
+            # Create detailed layout description for LLM
+            layout_description = self._create_layout_description_for_intent_analysis(visual_data, layout_index)
+            
+            # Build LLM prompt for template intent analysis
+            prompt = self._build_template_intent_analysis_prompt(layout_description)
+            
+            # Get LLM analysis
+            response = self.layout_recommender.client.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {"role": "system", "content": "You are an expert presentation template analyst who understands layout design intent. Analyze template layouts to determine their intended content structure and purpose. Focus on what content each placeholder expects and how they relate to each other."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.1,
+                max_tokens=500
+            )
+            
+            # Parse LLM response
+            template_intent = self._parse_template_intent_response(response.choices[0].message.content)
+            
+            # Enhance with visual data
+            template_intent['visual_data'] = visual_data
+            template_intent['layout_index'] = layout_index
+            
+            logger.debug(f"Analyzed template intent for layout {layout_index}: {template_intent.get('primary_purpose', 'unknown')}")
+            return template_intent
+            
+        except Exception as e:
+            logger.error(f"Template intent analysis failed for layout {layout_index}: {e}")
+            return self._basic_template_intent_analysis(layout, layout_index)
+    
+    def _basic_template_intent_analysis(self, layout: 'SlideLayout', layout_index: int) -> Dict[str, any]:
+        """
+        Fallback template intent analysis without LLM.
+        
+        Args:
+            layout: The SlideLayout object
+            layout_index: Index of the layout
+            
+        Returns:
+            Basic template intent dictionary
+        """
+        placeholders = list(layout.placeholders)
+        
+        # Count placeholder types
+        title_count = len([p for p in placeholders if p.placeholder_format.type in (1, 13)])
+        content_count = len([p for p in placeholders if p.placeholder_format.type in (2, 7)])
+        subtitle_count = len([p for p in placeholders if p.placeholder_format.type == 3])
+        image_count = len([p for p in placeholders if p.placeholder_format.type == 18])
+        
+        # Determine basic purpose
+        if content_count >= 3:
+            primary_purpose = "multi_column_content"
+        elif content_count == 2:
+            primary_purpose = "two_column_comparison"
+        elif image_count > 0 and content_count > 0:
+            primary_purpose = "image_with_content"
+        elif image_count > 0:
+            primary_purpose = "image_showcase"
+        elif title_count > 0 and content_count == 0:
+            primary_purpose = "title_section"
+        else:
+            primary_purpose = "standard_content"
+        
+        return {
+            "primary_purpose": primary_purpose,
+            "placeholder_expectations": {
+                "title": "Main slide heading" if title_count > 0 else None,
+                "subtitle": "Supporting tagline or summary" if subtitle_count > 0 else None,
+                "content": f"Main content in {content_count} areas" if content_count > 0 else None,
+                "image": f"Visual content in {image_count} areas" if image_count > 0 else None
+            },
+            "content_relationships": "sequential" if content_count > 1 else "single",
+            "visual_hierarchy": "title_dominant" if title_count > 0 else "content_focused",
+            "layout_index": layout_index,
+            "llm_analysis": False
+        }
+    
+    def _create_layout_description_for_intent_analysis(self, visual_data: Dict, layout_index: int) -> str:
+        """
+        Create a focused description for template intent analysis.
+        
+        Args:
+            visual_data: Visual analysis data from template parser
+            layout_index: Layout index
+            
+        Returns:
+            Description string for LLM analysis
+        """
+        try:
+            description_parts = []
+            
+            # Basic layout info
+            description_parts.append(f"LAYOUT INDEX: {layout_index}")
+            
+            if visual_data.get('visual_summary'):
+                description_parts.append(f"STRUCTURE: {visual_data['visual_summary']}")
+            
+            # Placeholder inventory
+            shapes = visual_data.get('shapes', {})
+            placeholders = shapes.get('placeholders', [])
+            
+            if placeholders:
+                placeholder_summary = []
+                for ph in placeholders:
+                    ph_type = ph.get('placeholder_type', 'unknown')
+                    content_type = ph.get('content_type', 'unknown')
+                    placeholder_summary.append(f"{content_type}({ph_type})")
+                
+                description_parts.append(f"PLACEHOLDERS: {', '.join(placeholder_summary)}")
+            
+            # Spatial relationships
+            spatial = visual_data.get('spatial_analysis', {})
+            if spatial:
+                grid = spatial.get('layout_grid', {})
+                if grid.get('type') != 'single':
+                    description_parts.append(f"ARRANGEMENT: {grid.get('type')} ({grid.get('columns')}x{grid.get('rows')})")
+            
+            # Design patterns
+            patterns = visual_data.get('design_patterns', {})
+            if patterns:
+                purpose = patterns.get('primary_purpose', 'general')
+                style = patterns.get('layout_style', 'standard')
+                description_parts.append(f"DESIGN: {style} style for {purpose} content")
+            
+            # Content zones
+            zones = visual_data.get('content_zones', {})
+            zone_info = []
+            for zone_name, zone_content in zones.items():
+                if zone_content:
+                    zone_info.append(f"{zone_name}({len(zone_content)})")
+            if zone_info:
+                description_parts.append(f"ZONES: {', '.join(zone_info)}")
+            
+            return " | ".join(description_parts)
+            
+        except Exception as e:
+            logger.debug(f"Failed to create layout description: {e}")
+            return f"Layout {layout_index}: Analysis failed"
+    
+    def _build_template_intent_analysis_prompt(self, layout_description: str) -> str:
+        """
+        Build LLM prompt for analyzing template intent.
+        
+        Args:
+            layout_description: Description of the layout structure
+            
+        Returns:
+            Complete prompt for template intent analysis
+        """
+        return f"""Analyze this PowerPoint template layout to understand its design intent and content expectations.
+
+TEMPLATE LAYOUT:
+{layout_description}
+
+ANALYSIS REQUIRED:
+1. PRIMARY PURPOSE: What is this layout designed to communicate? (e.g., comparison, process, showcase, overview)
+2. PLACEHOLDER EXPECTATIONS: What specific content should go in each placeholder type?
+3. CONTENT RELATIONSHIPS: How should content areas relate to each other?
+4. VISUAL HIERARCHY: What's the intended information flow and emphasis?
+5. CONTENT STRUCTURE: How should content be organized to match this template's design?
+
+IMPORTANT: Focus on the template's INTENT, not just what it CAN contain. What was this layout specifically designed for?
+
+Respond in this format:
+PRIMARY_PURPOSE: [main communication goal]
+TITLE_EXPECTATION: [what the title should communicate]
+SUBTILE_EXPECTATION: [what subtitle should contain, if present]
+CONTENT_EXPECTATION: [how main content should be structured]
+IMAGE_EXPECTATION: [what images should support, if present]
+CONTENT_RELATIONSHIPS: [how content areas should relate]
+VISUAL_HIERARCHY: [intended information flow]
+CONTENT_STRUCTURE: [recommended organization approach]"""
+    
+    def _parse_template_intent_response(self, response: str) -> Dict[str, any]:
+        """
+        Parse LLM response for template intent analysis.
+        
+        Args:
+            response: LLM response text
+            
+        Returns:
+            Parsed template intent dictionary
+        """
+        try:
+            intent = {
+                "primary_purpose": "general",
+                "placeholder_expectations": {},
+                "content_relationships": "independent",
+                "visual_hierarchy": "balanced",
+                "content_structure": "standard",
+                "llm_analysis": True
+            }
+            
+            # Extract structured information
+            response_lines = response.strip().split('\n')
+            
+            for line in response_lines:
+                line = line.strip()
+                if ':' in line:
+                    key, value = line.split(':', 1)
+                    key = key.strip().lower()
+                    value = value.strip()
+                    
+                    if 'primary_purpose' in key:
+                        intent['primary_purpose'] = value
+                    elif 'title_expectation' in key:
+                        intent['placeholder_expectations']['title'] = value
+                    elif 'subtitle_expectation' in key:
+                        intent['placeholder_expectations']['subtitle'] = value
+                    elif 'content_expectation' in key:
+                        intent['placeholder_expectations']['content'] = value
+                    elif 'image_expectation' in key:
+                        intent['placeholder_expectations']['image'] = value
+                    elif 'content_relationships' in key:
+                        intent['content_relationships'] = value
+                    elif 'visual_hierarchy' in key:
+                        intent['visual_hierarchy'] = value
+                    elif 'content_structure' in key:
+                        intent['content_structure'] = value
+            
+            return intent
+            
+        except Exception as e:
+            logger.error(f"Failed to parse template intent response: {e}")
+            return {
+                "primary_purpose": "general",
+                "placeholder_expectations": {},
+                "content_relationships": "independent",
+                "visual_hierarchy": "balanced",
+                "content_structure": "standard",
+                "llm_analysis": False
+            }
+    
+    def _generate_template_adapted_content(self, slide_plan: 'SlidePlan', template_intent: Dict[str, any]) -> Dict[str, any]:
+        """
+        Generate content that's specifically adapted to fit the template's design intent.
+        This is where content gets reshaped to match template expectations.
+        
+        Args:
+            slide_plan: Original slide plan with content
+            template_intent: Template intent analysis results
+            
+        Returns:
+            Dictionary with adapted content for different placeholder types
+        """
+        try:
+            if not self.layout_recommender or not self.enable_ml_layouts:
+                logger.debug("LLM not available for content adaptation, using original content")
+                return self._basic_content_adaptation(slide_plan, template_intent)
+            
+            # Create comprehensive content summary for adaptation
+            original_content_summary = self._create_content_summary_for_adaptation(slide_plan)
+            
+            # Build adaptation prompt
+            adaptation_prompt = self._build_content_adaptation_prompt(
+                original_content_summary, template_intent
+            )
+            
+            # Get LLM content adaptation
+            response = self.layout_recommender.client.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {"role": "system", "content": "You are an expert content strategist who adapts slide content to fit specific template designs. Transform content to match template intent while preserving the core message. Focus on what each placeholder type expects based on the template's design purpose."},
+                    {"role": "user", "content": adaptation_prompt}
+                ],
+                temperature=0.2,
+                max_tokens=800
+            )
+            
+            # Parse adapted content
+            adapted_content = self._parse_content_adaptation_response(response.choices[0].message.content)
+            
+            logger.debug(f"Adapted content for slide {slide_plan.index} to template intent: {template_intent.get('primary_purpose')}")
+            return adapted_content
+            
+        except Exception as e:
+            logger.error(f"Content adaptation failed for slide {slide_plan.index}: {e}")
+            return self._basic_content_adaptation(slide_plan, template_intent)
+    
+    def _basic_content_adaptation(self, slide_plan: 'SlidePlan', template_intent: Dict[str, any]) -> Dict[str, any]:
+        """
+        Fallback content adaptation without LLM.
+        
+        Args:
+            slide_plan: Original slide plan
+            template_intent: Template intent analysis
+            
+        Returns:
+            Basic adapted content dictionary
+        """
+        adapted_content = {
+            "title": slide_plan.title,
+            "bullets": slide_plan.bullets.copy() if slide_plan.bullets else [],
+            "bullet_hierarchy": slide_plan.bullet_hierarchy.copy() if slide_plan.bullet_hierarchy else None
+        }
+        
+        # Generate basic subtitle if template expects it
+        placeholder_expectations = template_intent.get('placeholder_expectations', {})
+        if placeholder_expectations.get('subtitle'):
+            bullets = slide_plan.get_bullet_texts()
+            if bullets and len(bullets) > 0:
+                # Create subtitle from first bullet or summary
+                first_bullet = bullets[0]
+                if len(first_bullet) <= 60:
+                    adapted_content['subtitle'] = first_bullet
+                else:
+                    adapted_content['subtitle'] = first_bullet[:57] + "..."
+        
+        return adapted_content
+    
+    def _create_content_summary_for_adaptation(self, slide_plan: 'SlidePlan') -> str:
+        """
+        Create a comprehensive content summary for adaptation.
+        
+        Args:
+            slide_plan: Slide plan to summarize
+            
+        Returns:
+            Content summary string
+        """
+        summary_parts = []
+        
+        # Title and type
+        summary_parts.append(f"SLIDE TITLE: '{slide_plan.title}'")
+        summary_parts.append(f"SLIDE TYPE: {slide_plan.slide_type}")
+        
+        # Content analysis
+        bullets = slide_plan.get_bullet_texts()
+        if bullets:
+            summary_parts.append(f"MAIN CONTENT: {len(bullets)} bullet points")
+            
+            # Include actual bullet content
+            for i, bullet in enumerate(bullets[:5]):  # Limit to first 5
+                summary_parts.append(f"  • {bullet}")
+            
+            if len(bullets) > 5:
+                summary_parts.append(f"  ... and {len(bullets) - 5} more points")
+        else:
+            summary_parts.append("MAIN CONTENT: No bullet points provided")
+        
+        # Additional content context
+        if slide_plan.image_query:
+            summary_parts.append(f"VISUAL CONTEXT: Expects images ({slide_plan.image_query})")
+        
+        if slide_plan.speaker_notes:
+            summary_parts.append(f"SPEAKER NOTES: {slide_plan.speaker_notes[:100]}...")
+        
+        return "\n".join(summary_parts)
+    
+    def _build_content_adaptation_prompt(self, content_summary: str, template_intent: Dict[str, any]) -> str:
+        """
+        Build LLM prompt for content adaptation.
+        
+        Args:
+            content_summary: Summary of original content
+            template_intent: Template intent analysis
+            
+        Returns:
+            Complete adaptation prompt
+        """
+        # Extract key template expectations
+        primary_purpose = template_intent.get('primary_purpose', 'general')
+        placeholder_expectations = template_intent.get('placeholder_expectations', {})
+        content_structure = template_intent.get('content_structure', 'standard')
+        content_relationships = template_intent.get('content_relationships', 'independent')
+        
+        prompt_parts = [
+            "Adapt the following slide content to fit this template's specific design intent and placeholder expectations.",
+            "",
+            "ORIGINAL CONTENT:",
+            content_summary,
+            "",
+            "TEMPLATE INTENT:",
+            f"Primary Purpose: {primary_purpose}",
+            f"Content Structure: {content_structure}",
+            f"Content Relationships: {content_relationships}",
+            "",
+            "TEMPLATE PLACEHOLDER EXPECTATIONS:"
+        ]
+        
+        # Add specific placeholder expectations
+        for placeholder_type, expectation in placeholder_expectations.items():
+            if expectation:
+                prompt_parts.append(f"• {placeholder_type.upper()}: {expectation}")
+        
+        prompt_parts.extend([
+            "",
+            "ADAPTATION TASK:",
+            "Reshape the content to match what this template expects. Generate appropriate content for each placeholder type based on the template's design intent.",
+            "",
+            "IMPORTANT GUIDELINES:",
+            "1. Preserve the core message and key information",
+            "2. Adapt content structure to match template expectations",
+            "3. Generate content specifically for subtitle/footer placeholders if template expects them",
+            "4. Ensure content coherence across all placeholders",
+            "5. Match the template's intended communication style",
+            "",
+            "Respond in this format:",
+            "ADAPTED_TITLE: [title adapted for this template]",
+            "ADAPTED_SUBTITLE: [subtitle if template expects one]",
+            "ADAPTED_BULLETS: [bullet points restructured for template]",
+            "ADAPTED_FOOTER: [footer content if template expects one]",
+            "ADAPTATION_REASONING: [brief explanation of changes made]"
+        ])
+        
+        return "\n".join(prompt_parts)
+    
+    def _parse_content_adaptation_response(self, response: str) -> Dict[str, any]:
+        """
+        Parse LLM response for content adaptation.
+        
+        Args:
+            response: LLM response text
+            
+        Returns:
+            Parsed adapted content dictionary
+        """
+        try:
+            adapted_content = {}
+            
+            # Split response into lines and parse
+            response_lines = response.strip().split('\n')
+            current_section = None
+            current_content = []
+            
+            for line in response_lines:
+                line = line.strip()
+                
+                if line.startswith('ADAPTED_TITLE:'):
+                    current_section = 'title'
+                    adapted_content['title'] = line.split(':', 1)[1].strip()
+                elif line.startswith('ADAPTED_SUBTITLE:'):
+                    current_section = 'subtitle'
+                    subtitle = line.split(':', 1)[1].strip()
+                    if subtitle and subtitle.lower() not in ['none', 'n/a', 'not needed']:
+                        adapted_content['subtitle'] = subtitle
+                elif line.startswith('ADAPTED_BULLETS:'):
+                    current_section = 'bullets'
+                    bullets_text = line.split(':', 1)[1].strip()
+                    if bullets_text and bullets_text.lower() not in ['none', 'n/a']:
+                        current_content = [bullets_text] if bullets_text else []
+                elif line.startswith('ADAPTED_FOOTER:'):
+                    current_section = 'footer'
+                    footer = line.split(':', 1)[1].strip()
+                    if footer and footer.lower() not in ['none', 'n/a', 'not needed']:
+                        adapted_content['footer'] = footer
+                elif line.startswith('ADAPTATION_REASONING:'):
+                    current_section = 'reasoning'
+                    adapted_content['reasoning'] = line.split(':', 1)[1].strip()
+                elif line.startswith('•') or line.startswith('-'):
+                    # Additional bullet points
+                    if current_section == 'bullets':
+                        bullet_text = line.lstrip('•-').strip()
+                        if bullet_text:
+                            current_content.append(bullet_text)
+            
+            # Process bullets
+            if current_content and current_section == 'bullets':
+                adapted_content['bullets'] = current_content
+            
+            return adapted_content
+            
+        except Exception as e:
+            logger.error(f"Failed to parse content adaptation response: {e}")
+            return {}
     
     def _create_layout_options_summary(self, available_layouts: Dict[str, int], real_names: Dict[int, str]) -> str:
         """
@@ -466,23 +1015,28 @@ SLIDE_TYPE:"""
                 except:
                     layout_descriptions.append(f"INDEX {layout_index}: '{real_name}' - Basic layout")
             
-            # Build LLM prompt for layout selection
-            prompt = f"""Select the most appropriate template layout for this slide content.
+            # Build LLM prompt for template-driven layout selection
+            prompt = f"""You are selecting a template layout that will define HOW this content should be structured and presented. The template you choose will determine what placeholders are available and how content should be adapted.
 
-SLIDE CONTENT:
+SLIDE CONTENT TO STRUCTURE:
 {content_summary}
 
-AVAILABLE TEMPLATE LAYOUTS:
+AVAILABLE TEMPLATE LAYOUTS (each with specific placeholder design):
 {chr(10).join(layout_descriptions)}
 
-TASK:
-Analyze the slide content and determine which template layout would best serve this content's purpose and presentation needs. Consider:
-1. Content type and structure
-2. Visual requirements (images, charts, text density)
-3. Semantic match between content intent and layout purpose
-4. Professional presentation standards
+CRITICAL SELECTION CRITERIA:
+1. PLACEHOLDER COMPATIBILITY: Which template's placeholders best match this content's natural structure?
+2. SEMANTIC ALIGNMENT: Which template was designed for this type of content/message?
+3. CONTENT ADAPTATION: How well can this content be adapted to fit the template's intended structure?
+4. TEMPLATE PURPOSE: What was this template designed to communicate?
 
-Respond with only the INDEX number of the most appropriate layout.
+IMPORTANT: You are not just placing content into a template - you are choosing the template that will RESHAPE how this content is presented. The selected template will determine:
+- What subtitle/footer content should be generated
+- How main content should be structured
+- What additional elements should be included
+- The overall presentation approach
+
+Respond with only the INDEX number of the template that best defines how this content should be structured.
 
 SELECTED_LAYOUT_INDEX:"""
             
@@ -490,7 +1044,7 @@ SELECTED_LAYOUT_INDEX:"""
             response = self.layout_recommender.client.chat.completions.create(
                 model="gpt-4o",
                 messages=[
-                    {"role": "system", "content": "You are an expert presentation designer. Select the most appropriate template layout based on slide content and layout capabilities. Respond only with the layout index number."},
+                    {"role": "system", "content": "You are an expert presentation designer who understands that template selection determines content structure. Choose the template that best defines how the content should be organized and presented, not just where to place existing content. Respond only with the layout index number."},
                     {"role": "user", "content": prompt}
                 ],
                 temperature=0.1,

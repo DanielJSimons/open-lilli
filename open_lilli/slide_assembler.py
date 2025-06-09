@@ -1042,8 +1042,6 @@ class SlideAssembler:
             if len(bullets) <= 3 and len(secondary_placeholders) > 0:
                 # For short content, use subtitle for key takeaway
                 strategy["primary_bullets"] = bullets
-                if bullets:
-                    strategy["subtitle_content"] = [f"Key takeaway: {bullets[0]}"]
                     
             elif len(bullets) > 6 and len(primary_placeholders) >= 2:
                 # For long content, distribute across multiple primary placeholders
@@ -1068,6 +1066,34 @@ class SlideAssembler:
             else:
                 # Standard distribution
                 strategy["primary_bullets"] = bullets
+            
+            # Always try to populate subtitle placeholders when they exist
+            subtitle_placeholders = [p for p in secondary_placeholders 
+                                   if p.placeholder_format.type == PP_PLACEHOLDER.SUBTITLE]
+            
+            if subtitle_placeholders and len(strategy["subtitle_content"]) == 0:
+                # Create appropriate subtitle content based on slide content
+                if bullets:
+                    if slide_plan.slide_type == "title":
+                        # For title slides, use a summary or tagline
+                        if len(bullets) == 1:
+                            strategy["subtitle_content"] = [bullets[0]]
+                        else:
+                            # Create a brief summary from first bullet
+                            strategy["subtitle_content"] = [bullets[0][:80] + "..." if len(bullets[0]) > 80 else bullets[0]]
+                    else:
+                        # For content slides, create a summary or key point
+                        if len(bullets) <= 3:
+                            strategy["subtitle_content"] = [f"Key takeaway: {bullets[0][:60]}{'...' if len(bullets[0]) > 60 else ''}"]
+                        else:
+                            # For longer content, create a brief overview
+                            strategy["subtitle_content"] = [f"{len(bullets)} key points covering {slide_plan.title.lower()}"]
+                elif slide_plan.slide_type == "title":
+                    # For title slides without bullets, create a generic subtitle
+                    strategy["subtitle_content"] = [""]  # Empty string to clear placeholder
+                else:
+                    # For non-title slides without bullets, create descriptive subtitle
+                    strategy["subtitle_content"] = [f"Overview of {slide_plan.title.lower()}"]
             
             # Add footer content if available and appropriate
             if len(secondary_placeholders) > 1 and slide_plan.speaker_notes:
@@ -1119,8 +1145,14 @@ class SlideAssembler:
             if strategy["subtitle_content"] and placeholders["secondary_content"]:
                 for placeholder in placeholders["secondary_content"]:
                     if placeholder.placeholder_format.type == PP_PLACEHOLDER.SUBTITLE:
-                        placeholder.text = strategy["subtitle_content"][0]
-                        logger.debug("Added content to subtitle placeholder")
+                        subtitle_text = strategy["subtitle_content"][0]
+                        if subtitle_text:  # Only set text if not empty
+                            placeholder.text = subtitle_text
+                            logger.debug(f"Added subtitle content: {subtitle_text[:50]}...")
+                        else:
+                            # Hide empty subtitle placeholder
+                            self._hide_empty_placeholder(placeholder, "subtitle")
+                            logger.debug("Hidden empty subtitle placeholder")
                         break
             
             # Add footer content
@@ -1130,6 +1162,9 @@ class SlideAssembler:
                         placeholder.text = strategy["footer_content"][0]
                         logger.debug("Added content to footer placeholder")
                         break
+            
+            # Final cleanup: Ensure no subtitle placeholders are left with default text
+            self._cleanup_empty_subtitle_placeholders(placeholders["secondary_content"])
                         
         except Exception as e:
             logger.error(f"Content distribution execution failed: {e}")
@@ -2975,6 +3010,39 @@ class SlideAssembler:
             
         except Exception as e:
             logger.warning(f"Failed to hide {placeholder_name} placeholder: {e}")
+
+    def _cleanup_empty_subtitle_placeholders(self, secondary_placeholders: List) -> None:
+        """
+        Clean up any subtitle placeholders that still contain default or empty text.
+        
+        Args:
+            secondary_placeholders: List of secondary content placeholders
+        """
+        try:
+            for placeholder in secondary_placeholders:
+                if placeholder.placeholder_format.type == PP_PLACEHOLDER.SUBTITLE:
+                    # Check if placeholder has default or problematic text
+                    if hasattr(placeholder, 'text'):
+                        current_text = placeholder.text.strip().lower()
+                        
+                        # List of default subtitle texts that should be cleaned up
+                        default_texts = ['subtitle', 'click to add subtitle', 'add subtitle', '']
+                        
+                        if current_text in default_texts:
+                            self._hide_empty_placeholder(placeholder, "subtitle")
+                            logger.debug(f"Cleaned up subtitle placeholder with default text: '{current_text}'")
+                    elif hasattr(placeholder, 'text_frame') and placeholder.text_frame:
+                        # Check text frame for default content
+                        text_content = ""
+                        for para in placeholder.text_frame.paragraphs:
+                            text_content += para.text.strip()
+                        
+                        if text_content.lower() in ['subtitle', 'click to add subtitle', 'add subtitle', '']:
+                            self._hide_empty_placeholder(placeholder, "subtitle")
+                            logger.debug(f"Cleaned up subtitle placeholder text frame with default content")
+                            
+        except Exception as e:
+            logger.warning(f"Failed to cleanup subtitle placeholders: {e}")
 
     def _remove_empty_placeholders_from_slide(self, slide) -> int:
         """
