@@ -131,132 +131,28 @@ class TemplateParser:
     
     def _generate_semantic_layout_map(self) -> Dict[str, List[int]]:
         """
-        Create semantic mapping from content types to appropriate layout indices.
+        DEPRECATED: This method used hardcoded keyword matching for content types.
+        Pure LLM-based template selection is now used instead.
         
         Returns:
-            Dictionary mapping content semantics to list of suitable layout indices
+            Empty dictionary (method deprecated)
         """
-        semantic_map = {
-            "team": [],
-            "people": [],
-            "staff": [],
-            "about_us": [],
-            "bios": [],
-            "profiles": [],
-            "contact": [],
-            "timeline": [],
-            "roadmap": [],
-            "agenda": [],
-            "gallery": [],
-            "portfolio": [],
-            "testimonials": [],
-            "reviews": [],
-            "process": [],
-            "steps": [],
-            "workflow": [],
-            "comparison": [],
-            "vs": [],
-            "features": [],
-            "benefits": [],
-            "services": [],
-            "products": []
-        }
-        
-        try:
-            real_names = self._extract_real_layout_names()
-            
-            for layout_index, layout_name in real_names.items():
-                layout_name_lower = layout_name.lower()
-                
-                # Check for team-related layouts
-                if any(word in layout_name_lower for word in ['team', 'meet', 'staff', 'people', 'employee', 'member']):
-                    semantic_map["team"].append(layout_index)
-                    semantic_map["people"].append(layout_index)
-                    semantic_map["staff"].append(layout_index)
-                    logger.debug(f"Layout {layout_index} ('{layout_name}') mapped to team-related content")
-                
-                # Check for about/bio layouts
-                if any(word in layout_name_lower for word in ['about', 'bio', 'profile', 'intro']):
-                    semantic_map["about_us"].append(layout_index)
-                    semantic_map["bios"].append(layout_index)
-                    semantic_map["profiles"].append(layout_index)
-                
-                # Check for timeline/roadmap layouts
-                if any(word in layout_name_lower for word in ['timeline', 'roadmap', 'agenda', 'schedule', 'plan']):
-                    semantic_map["timeline"].append(layout_index)
-                    semantic_map["roadmap"].append(layout_index)
-                    semantic_map["agenda"].append(layout_index)
-                
-                # Check for gallery/portfolio layouts
-                if any(word in layout_name_lower for word in ['gallery', 'portfolio', 'showcase', 'examples']):
-                    semantic_map["gallery"].append(layout_index)
-                    semantic_map["portfolio"].append(layout_index)
-                
-                # Check for process/workflow layouts
-                if any(word in layout_name_lower for word in ['process', 'step', 'workflow', 'procedure']):
-                    semantic_map["process"].append(layout_index)
-                    semantic_map["steps"].append(layout_index)
-                    semantic_map["workflow"].append(layout_index)
-                
-                # Check for comparison layouts
-                if any(word in layout_name_lower for word in ['comparison', 'vs', 'versus', 'compare']):
-                    semantic_map["comparison"].append(layout_index)
-                    semantic_map["vs"].append(layout_index)
-                
-                # Check for feature/benefit layouts
-                if any(word in layout_name_lower for word in ['feature', 'benefit', 'advantage', 'service', 'product']):
-                    semantic_map["features"].append(layout_index)
-                    semantic_map["benefits"].append(layout_index)
-                    semantic_map["services"].append(layout_index)
-                    semantic_map["products"].append(layout_index)
-            
-            # Remove empty mappings
-            semantic_map = {k: v for k, v in semantic_map.items() if v}
-            
-            logger.info(f"Created semantic layout map with {len(semantic_map)} content types mapped to layouts")
-            
-        except Exception as e:
-            logger.error(f"Failed to generate semantic layout map: {e}")
-            
-        return semantic_map
+        logger.debug("_generate_semantic_layout_map is deprecated - using LLM-based template selection instead")
+        return {}
     
     def find_layouts_for_content_type(self, content_keywords: List[str]) -> List[int]:
         """
-        Find layout indices that match given content keywords.
+        DEPRECATED: This method used hardcoded keyword matching.
+        Pure LLM-based template selection is now used instead.
         
         Args:
             content_keywords: List of keywords describing content type
             
         Returns:
-            List of layout indices sorted by relevance
+            Empty list (method deprecated)
         """
-        matching_layouts = set()
-        
-        try:
-            for keyword in content_keywords:
-                keyword_lower = keyword.lower()
-                
-                # Direct keyword match
-                if keyword_lower in self.semantic_layout_map:
-                    matching_layouts.update(self.semantic_layout_map[keyword_lower])
-                
-                # Fuzzy matching for related terms
-                for semantic_key, layout_indices in self.semantic_layout_map.items():
-                    if keyword_lower in semantic_key or semantic_key in keyword_lower:
-                        matching_layouts.update(layout_indices)
-                        
-            result = list(matching_layouts)
-            
-            if result:
-                logger.debug(f"Found {len(result)} matching layouts for keywords {content_keywords}: {result}")
-            else:
-                logger.debug(f"No semantic matches found for keywords {content_keywords}")
-                
-            return result
-            
-        except Exception as e:
-            logger.error(f"Error finding layouts for content type: {e}")
-            return []
+        logger.debug("find_layouts_for_content_type is deprecated - using LLM-based template selection instead")
+        return []
 
     def _classify_layout(self, layout: SlideLayout, index: int) -> str:
         """

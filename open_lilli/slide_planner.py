@@ -1,6 +1,7 @@
 """Slide planner for converting outlines into detailed slide plans."""
 
 import logging
+import re
 from typing import Dict, List, Optional
 
 from openai import OpenAI
@@ -45,7 +46,6 @@ class SlidePlanner:
         """
         self.template_parser = template_parser
         self.design_pattern = design_pattern
-        self.layout_priorities = self._define_layout_priorities()
         self.enable_ml_layouts = enable_ml_layouts and openai_client is not None
         
         # Initialize ML layout recommender if enabled
@@ -79,32 +79,7 @@ class SlidePlanner:
 
         logger.info(f"SlidePlanner initialized with {len(self.template_parser.layout_map)} available layouts. Upshift map: {self.layout_upshift_map}")
 
-    def _define_layout_priorities(self) -> Dict[str, List[str]]:
-        """
-        Define layout priorities for different slide types with better variety.
-        
-        Returns:
-            Dictionary mapping slide types to ordered lists of preferred layouts
-        """
-        return {
-            "title": ["title", "section", "content"],
-            "content": ["content", "two_column", "content_dense", "blank"],  # Prioritize variety
-            "image": ["image", "image_content", "content", "blank"],
-            "chart": ["image_content", "content", "content_dense", "two_column", "blank"],  # Better for charts
-            "two_column": ["two_column", "comparison", "content_dense", "content", "blank"],
-            "section": ["section", "title", "content"],
-            "blank": ["blank", "content"],
-            "comparison": ["comparison", "two_column", "three_column", "content_dense", "blank"],
-            "content_dense": ["content_dense", "three_column", "two_column", "content", "blank"],
-            "three_column": ["three_column", "content_dense", "two_column", "comparison", "blank"],
-            # Enhanced content-based patterns with semantic support
-            "team": ["image_content", "three_column", "two_column", "content", "blank"],  # Team pages need images
-            "process": ["image_content", "two_column", "content", "blank"],
-            "data": ["content_dense", "two_column", "comparison", "content", "blank"],
-            "overview": ["three_column", "content_dense", "two_column", "content", "blank"],
-            "portfolio": ["image", "image_content", "three_column", "content", "blank"],  # Portfolio needs images
-            "services": ["content_dense", "three_column", "two_column", "content", "blank"]
-        }
+    # Removed hardcoded layout priorities - now using pure LLM-based selection
 
     def plan_slides(
         self, 
@@ -178,10 +153,10 @@ class SlidePlanner:
         # Start with the original slide data
         planned_slide = slide.model_copy()
         
-        # Enhance slide type based on content analysis before layout selection
-        enhanced_slide_type = self._analyze_content_patterns(planned_slide)
+        # Use LLM to analyze content and determine appropriate slide type
+        enhanced_slide_type = self._analyze_content_with_llm(planned_slide)
         if enhanced_slide_type != planned_slide.slide_type:
-            logger.debug(f"Enhanced slide {planned_slide.index} type from '{planned_slide.slide_type}' to '{enhanced_slide_type}'")
+            logger.info(f"LLM enhanced slide {planned_slide.index} type from '{planned_slide.slide_type}' to '{enhanced_slide_type}'")
             planned_slide.slide_type = enhanced_slide_type
         
         # Assign layout using ML or rule-based selection
@@ -219,62 +194,198 @@ class SlidePlanner:
         
         return planned_slide
     
-    def _analyze_content_patterns(self, slide: SlidePlan) -> str:
+    def _analyze_content_with_llm(self, slide: SlidePlan) -> str:
         """
-        Analyze slide content to determine the most appropriate slide type.
+        Use LLM to analyze slide content and determine the most appropriate slide type
+        based on content intent and available template layouts.
         
         Args:
             slide: SlidePlan to analyze
             
         Returns:
-            Enhanced slide type based on content patterns
+            LLM-determined slide type or original if LLM analysis fails
         """
-        title = slide.title.lower()
-        bullets = [bullet.lower() for bullet in slide.get_bullet_texts()]
-        all_content = f"{title} {' '.join(bullets)}"
+        try:
+            if not self.layout_recommender or not self.enable_ml_layouts:
+                logger.debug("LLM analysis not available, using original slide type")
+                return slide.slide_type
+            
+            # Get available template layouts with their real names
+            available_layouts = self.template_parser.layout_map
+            real_layout_names = self.template_parser._extract_real_layout_names()
+            
+            # Create comprehensive content summary
+            content_summary = self._create_comprehensive_content_summary(slide)
+            
+            # Create layout options summary
+            layout_options = self._create_layout_options_summary(available_layouts, real_layout_names)
+            
+            # Build LLM prompt for content analysis
+            prompt = self._build_content_analysis_prompt(content_summary, layout_options)
+            
+            # Get LLM analysis
+            response = self.layout_recommender.client.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {"role": "system", "content": "You are an expert presentation designer who understands content intent and can match content to appropriate template layouts. Analyze the slide content and determine what type of slide this should be based on its purpose and the available template options."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.1,
+                max_tokens=150
+            )
+            
+            # Parse LLM response
+            analyzed_type = self._parse_content_analysis_response(response.choices[0].message.content, slide.slide_type)
+            
+            logger.debug(f"LLM content analysis: '{slide.slide_type}' → '{analyzed_type}'")
+            return analyzed_type
+            
+        except Exception as e:
+            logger.error(f"LLM content analysis failed for slide {slide.index}: {e}")
+            return slide.slide_type
+    
+    def _create_comprehensive_content_summary(self, slide: SlidePlan) -> str:
+        """
+        Create a detailed summary of slide content for LLM analysis.
         
-        # Enhanced pattern detection keywords
-        team_words = ['team', 'staff', 'people', 'member', 'employee', 'founder', 'leadership', 'meet', 'our team', 'about us', 'who we are', 'bio', 'profile']
-        comparison_words = ['vs', 'versus', 'compared to', 'difference', 'contrast', 'before/after', 'pros and cons']
-        process_words = ['step', 'process', 'workflow', 'procedure', 'method', 'approach', 'strategy', 'timeline', 'roadmap']
-        data_words = ['data', 'metrics', 'statistics', 'numbers', 'results', 'performance', 'analysis']
-        overview_words = ['overview', 'summary', 'key points', 'highlights', 'main', 'primary', 'executive']
-        portfolio_words = ['portfolio', 'gallery', 'showcase', 'examples', 'work', 'projects', 'case studies']
-        service_words = ['services', 'products', 'features', 'benefits', 'offerings', 'solutions']
+        Args:
+            slide: SlidePlan to summarize
+            
+        Returns:
+            Comprehensive content description
+        """
+        summary_parts = []
         
-        # Count bullet points to assess density
-        bullet_count = len(bullets)
+        # Title analysis
+        summary_parts.append(f"SLIDE TITLE: '{slide.title}'")
         
-        # Enhanced pattern matching with semantic content detection
-        if any(word in all_content for word in team_words):
-            return 'team'
-        elif any(word in all_content for word in comparison_words) or bullet_count >= 2 and 'comparison' in title:
-            return 'comparison'
-        elif any(word in all_content for word in process_words) or 'flow' in title:
-            return 'process'
-        elif any(word in all_content for word in data_words) or slide.chart_data:
-            return 'data'
-        elif any(word in all_content for word in portfolio_words):
-            return 'portfolio'
-        elif any(word in all_content for word in service_words):
-            return 'services'
-        elif any(word in all_content for word in overview_words) or bullet_count >= 6:
-            return 'overview'
-        elif bullet_count >= 8:  # Very dense content
-            return 'content_dense'
-        elif bullet_count >= 4 and slide.image_query:  # Image with multiple points
-            return 'image_content'
-        elif bullet_count == 0 and slide.image_query:  # Image-focused
-            return 'image'
-        elif 'section' in slide.slide_type or 'intro' in title:
-            return 'section'
+        # Content analysis
+        bullets = slide.get_bullet_texts()
+        if bullets:
+            summary_parts.append(f"CONTENT: {len(bullets)} bullet points")
+            if len(bullets) <= 3:
+                summary_parts.append(f"BULLET POINTS: {bullets}")
+            else:
+                summary_parts.append(f"SAMPLE BULLETS: {bullets[:2]} ... and {len(bullets)-2} more")
+        else:
+            summary_parts.append("CONTENT: No bullet points")
         
-        # Return original slide type if no patterns detected
-        return slide.slide_type
+        # Media and special content
+        if slide.image_query:
+            summary_parts.append(f"IMAGES: Needs images ({slide.image_query})")
+        if slide.chart_data:
+            summary_parts.append("CHARTS: Contains data visualization")
+        if slide.speaker_notes:
+            summary_parts.append(f"NOTES: {slide.speaker_notes[:100]}...")
+        
+        # Slide context
+        summary_parts.append(f"CURRENT_TYPE: {slide.slide_type}")
+        summary_parts.append(f"SLIDE_INDEX: {slide.index}")
+        
+        return " | ".join(summary_parts)
+    
+    def _create_layout_options_summary(self, available_layouts: Dict[str, int], real_names: Dict[int, str]) -> str:
+        """
+        Create a summary of available template layouts for LLM analysis.
+        
+        Args:
+            available_layouts: Dictionary of layout names to indices
+            real_names: Dictionary of layout indices to real names
+            
+        Returns:
+            Summary of layout options
+        """
+        layout_descriptions = []
+        
+        for layout_name, layout_index in available_layouts.items():
+            real_name = real_names.get(layout_index, layout_name)
+            
+            # Get visual analysis if available
+            try:
+                visual_data = self.template_parser.extract_complete_layout_visual_data(
+                    self.template_parser.prs.slide_layouts[layout_index], layout_index
+                )
+                visual_summary = visual_data.get('visual_summary', 'No description available')
+                layout_descriptions.append(f"'{real_name}': {visual_summary}")
+            except:
+                layout_descriptions.append(f"'{real_name}': Layout {layout_index}")
+        
+        return "\n".join(layout_descriptions)
+    
+    def _build_content_analysis_prompt(self, content_summary: str, layout_options: str) -> str:
+        """
+        Build LLM prompt for content analysis and slide type determination.
+        
+        Args:
+            content_summary: Summary of slide content
+            layout_options: Summary of available layouts
+            
+        Returns:
+            Complete prompt for LLM
+        """
+        return f"""Analyze this slide content and determine what type of slide this should be based on its intent and purpose.
+
+SLIDE CONTENT:
+{content_summary}
+
+AVAILABLE TEMPLATE LAYOUTS:
+{layout_options}
+
+TASK:
+Based on the slide content's intent and purpose, determine what type of slide this should be. Consider:
+1. What is the main purpose of this slide?
+2. What kind of layout would best serve this content?
+3. Are there any template layouts that seem specifically designed for this type of content?
+
+Respond with just the most appropriate slide type (one word if possible, like: title, team, comparison, process, data, portfolio, services, content, image, etc.)
+
+SLIDE_TYPE:"""
+    
+    def _parse_content_analysis_response(self, response: str, original_type: str) -> str:
+        """
+        Parse LLM response for content analysis.
+        
+        Args:
+            response: LLM response text
+            original_type: Original slide type as fallback
+            
+        Returns:
+            Parsed slide type
+        """
+        try:
+            # Extract slide type from response
+            response_clean = response.strip().lower()
+            
+            # Look for slide type after "SLIDE_TYPE:" marker
+            if "slide_type:" in response_clean:
+                type_part = response_clean.split("slide_type:")[-1].strip()
+                slide_type = type_part.split()[0] if type_part.split() else original_type
+            else:
+                # Take the last word/line as the slide type
+                words = response_clean.split()
+                slide_type = words[-1] if words else original_type
+            
+            # Clean up the slide type
+            slide_type = slide_type.replace('.', '').replace(',', '').replace('!', '')
+            
+            # Validate that it's a reasonable slide type
+            valid_types = {'title', 'team', 'comparison', 'process', 'data', 'portfolio', 'services', 
+                         'content', 'image', 'chart', 'overview', 'section', 'blank', 'timeline', 
+                         'gallery', 'about', 'contact', 'features', 'benefits'}
+            
+            if slide_type in valid_types:
+                return slide_type
+            else:
+                logger.debug(f"LLM returned unknown slide type '{slide_type}', using original '{original_type}'")
+                return original_type
+                
+        except Exception as e:
+            logger.error(f"Failed to parse content analysis response: {e}")
+            return original_type
 
     def _select_layout_with_ml(self, slide: SlidePlan) -> 'LayoutRecommendation':
         """
-        Select layout using LLM/ML recommendation with rule-based fallback.
+        Select layout using pure LLM analysis - no hardcoded rules or fallbacks.
         
         Args:
             slide: SlidePlan to get layout recommendation for
@@ -282,124 +393,166 @@ class SlidePlanner:
         Returns:
             LayoutRecommendation object with layout choice and metadata
         """
-        # Try visual analysis-based recommendation first if enabled
-        if self.enable_ml_layouts and self.layout_recommender:
-            try:
-                # Get available layouts for this template
-                available_layouts = self.template_parser.layout_map
-                
-                # First try comprehensive visual analysis approach
-                try:
-                    visual_recommendation = self.layout_recommender.recommend_layout_with_visual_analysis(
-                        slide, self.template_parser, available_layouts
-                    )
-                    
-                    # Log the visual analysis recommendation
-                    logger.debug(f"Visual analysis recommendation for slide {slide.index}: "
-                               f"{visual_recommendation.slide_type} (confidence: {visual_recommendation.confidence:.2f})")
-                    
-                    # Use visual analysis recommendation if confidence is reasonable
-                    if visual_recommendation.confidence >= 0.3:  # Lower threshold for visual analysis
-                        return visual_recommendation
-                    else:
-                        logger.debug(f"Visual analysis confidence too low ({visual_recommendation.confidence:.2f}), trying LLM fallback")
-                
-                except Exception as e:
-                    logger.debug(f"Visual analysis layout recommendation failed for slide {slide.index}: {e}")
-                
-                # Fallback to LLM-based semantic analysis if visual analysis fails
-                try:
-                    llm_recommendation = self.layout_recommender.recommend_layout_with_llm(
-                        slide, available_layouts
-                    )
-                    
-                    # Log the LLM recommendation for debugging
-                    logger.debug(f"LLM fallback recommendation for slide {slide.index}: "
-                               f"{llm_recommendation.slide_type} (confidence: {llm_recommendation.confidence:.2f})")
-                    
-                    # Use LLM recommendation if confidence is reasonable
-                    if llm_recommendation.confidence >= 0.4:
-                        return llm_recommendation
-                    else:
-                        logger.debug(f"LLM confidence too low ({llm_recommendation.confidence:.2f}), trying traditional ML")
-                
-                except Exception as e:
-                    logger.debug(f"LLM layout recommendation failed for slide {slide.index}: {e}")
-                
-                # Final fallback to traditional ML recommendation
-                ml_recommendation = self.layout_recommender.recommend_layout(
-                    slide, available_layouts
-                )
-                
-                # Log the ML recommendation for debugging
-                logger.debug(f"Traditional ML recommendation for slide {slide.index}: "
-                           f"{ml_recommendation.slide_type} (confidence: {ml_recommendation.confidence:.2f})")
-                
-                return ml_recommendation
-                
-            except Exception as e:
-                logger.warning(f"All ML layout recommendations failed for slide {slide.index}: {e}")
-                # Fall through to rule-based selection
-        
-        # Use rule-based fallback
-        layout_id = self._select_layout(slide.slide_type)
-        
-        # Create a fallback recommendation object
-        from .models import LayoutRecommendation
-        return LayoutRecommendation(
-            slide_type=slide.slide_type,
-            layout_id=layout_id,
-            confidence=0.5,
-            reasoning=f"Rule-based selection for {slide.slide_type}",
-            similar_slides=[],
-            fallback_used=True
-        )
+        try:
+            # Use pure LLM-based layout selection
+            layout_id = self._select_layout_with_llm_only(slide)
+            
+            # Get layout name for response
+            real_names = self.template_parser._extract_real_layout_names()
+            layout_name = real_names.get(layout_id, f"layout_{layout_id}")
+            
+            # Create recommendation object
+            from .models import LayoutRecommendation
+            return LayoutRecommendation(
+                slide_type=layout_name,
+                layout_id=layout_id,
+                confidence=0.9,  # High confidence in LLM decision
+                reasoning=f"LLM selected '{layout_name}' based on content analysis and template matching",
+                similar_slides=[],
+                fallback_used=False
+            )
+            
+        except Exception as e:
+            logger.error(f"LLM layout selection failed for slide {slide.index}: {e}")
+            
+            # Emergency fallback only if LLM completely fails
+            from .models import LayoutRecommendation
+            return LayoutRecommendation(
+                slide_type="content",
+                layout_id=0,
+                confidence=0.1,
+                reasoning=f"Emergency fallback due to LLM failure: {e}",
+                similar_slides=[],
+                fallback_used=True
+            )
 
-    def _select_layout(self, slide_type: str) -> int:
+    def _select_layout_with_llm_only(self, slide: SlidePlan) -> int:
         """
-        Select the best available layout for a slide type using semantic matching.
+        Use pure LLM analysis to select the best layout for a slide.
+        No hardcoded rules or priorities - let the LLM decide based on content and available templates.
         
         Args:
-            slide_type: Type of slide
+            slide: SlidePlan with content to match
             
         Returns:
-            Layout index
+            Layout index selected by LLM
         """
-        # First, try semantic matching for specialized content types
-        semantic_matches = self.template_parser.find_layouts_for_content_type([slide_type])
+        try:
+            if not self.layout_recommender or not self.enable_ml_layouts:
+                logger.warning("LLM not available for layout selection, using first available layout")
+                return 0
+            
+            # Get available layouts with their real names and descriptions
+            available_layouts = self.template_parser.layout_map
+            real_names = self.template_parser._extract_real_layout_names()
+            
+            # Create detailed content analysis
+            content_summary = self._create_comprehensive_content_summary(slide)
+            
+            # Create detailed layout descriptions
+            layout_descriptions = []
+            for layout_name, layout_index in available_layouts.items():
+                real_name = real_names.get(layout_index, layout_name)
+                
+                try:
+                    visual_data = self.template_parser.extract_complete_layout_visual_data(
+                        self.template_parser.prs.slide_layouts[layout_index], layout_index
+                    )
+                    visual_summary = visual_data.get('visual_summary', 'No description')
+                    recommended_content = visual_data.get('recommended_content_types', [])
+                    content_hint = f" (best for: {', '.join(recommended_content[:3])})" if recommended_content else ""
+                    
+                    layout_descriptions.append(f"INDEX {layout_index}: '{real_name}' - {visual_summary}{content_hint}")
+                except:
+                    layout_descriptions.append(f"INDEX {layout_index}: '{real_name}' - Basic layout")
+            
+            # Build LLM prompt for layout selection
+            prompt = f"""Select the most appropriate template layout for this slide content.
+
+SLIDE CONTENT:
+{content_summary}
+
+AVAILABLE TEMPLATE LAYOUTS:
+{chr(10).join(layout_descriptions)}
+
+TASK:
+Analyze the slide content and determine which template layout would best serve this content's purpose and presentation needs. Consider:
+1. Content type and structure
+2. Visual requirements (images, charts, text density)
+3. Semantic match between content intent and layout purpose
+4. Professional presentation standards
+
+Respond with only the INDEX number of the most appropriate layout.
+
+SELECTED_LAYOUT_INDEX:"""
+            
+            # Get LLM recommendation
+            response = self.layout_recommender.client.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {"role": "system", "content": "You are an expert presentation designer. Select the most appropriate template layout based on slide content and layout capabilities. Respond only with the layout index number."},
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=0.1,
+                max_tokens=50
+            )
+            
+            # Parse response
+            selected_index = self._parse_layout_selection_response(response.choices[0].message.content, available_layouts)
+            
+            real_name = real_names.get(selected_index, f"layout_{selected_index}")
+            logger.info(f"LLM selected layout '{real_name}' (index {selected_index}) for slide: '{slide.title}'")
+            
+            return selected_index
+            
+        except Exception as e:
+            logger.error(f"LLM layout selection failed for slide {slide.index}: {e}")
+            # Fallback to first available layout
+            return 0
+    
+    def _parse_layout_selection_response(self, response: str, available_layouts: Dict[str, int]) -> int:
+        """
+        Parse LLM response for layout selection.
         
-        if semantic_matches:
-            # Use the first semantically matched layout
-            layout_index = semantic_matches[0]
-            layout_name = self.template_parser.reverse_layout_map.get(layout_index, f"layout_{layout_index}")
-            logger.info(f"Found semantic match: layout '{layout_name}' (index {layout_index}) for slide type '{slide_type}'")
-            return layout_index
-        
-        # If no semantic match, fall back to prioritized layout options
-        preferred_layouts = self.layout_priorities.get(slide_type, ["content", "blank"])
-        available_layouts = self.template_parser.list_available_layouts()
-        
-        # Find the first available preferred layout
-        for preferred in preferred_layouts:
-            if preferred in available_layouts:
-                layout_index = self.template_parser.get_layout_index(preferred)
-                logger.debug(f"Selected priority layout '{preferred}' (index {layout_index}) for slide type '{slide_type}'")
-                return layout_index
-        
-        # Fallback to first available layout
-        if available_layouts:
-            fallback_layout = available_layouts[0]
-            layout_index = self.template_parser.get_layout_index(fallback_layout)
-            logger.warning(f"Using fallback layout '{fallback_layout}' for slide type '{slide_type}'")
-            return layout_index
-        
-        # Last resort - use index 0
-        logger.error(f"No suitable layout found for slide type '{slide_type}', using index 0")
-        return 0
+        Args:
+            response: LLM response text
+            available_layouts: Available layout mappings
+            
+        Returns:
+            Selected layout index
+        """
+        try:
+            # Look for index number in response
+            import re
+            
+            # Try to find "SELECTED_LAYOUT_INDEX:" followed by number
+            index_match = re.search(r'SELECTED_LAYOUT_INDEX:\s*(\d+)', response, re.IGNORECASE)
+            if index_match:
+                selected_index = int(index_match.group(1))
+            else:
+                # Look for any number in the response
+                numbers = re.findall(r'\b(\d+)\b', response)
+                if numbers:
+                    selected_index = int(numbers[0])  # Take first number found
+                else:
+                    logger.warning(f"No index found in LLM response: '{response}', using 0")
+                    return 0
+            
+            # Validate the index is within available layouts
+            max_index = max(available_layouts.values()) if available_layouts else 0
+            if 0 <= selected_index <= max_index:
+                return selected_index
+            else:
+                logger.warning(f"LLM selected invalid index {selected_index}, using 0")
+                return 0
+                
+        except Exception as e:
+            logger.error(f"Failed to parse layout selection response: {e}")
+            return 0
 
     def _generate_image_query(self, slide: SlidePlan) -> Optional[str]:
         """
-        Generate an image search query based on slide content.
+        Generate an image search query using LLM-based content analysis.
         
         Args:
             slide: Slide to generate query for
@@ -416,39 +569,57 @@ class SlidePlanner:
         if slide.image_query:
             return slide.image_query
         
-        # Generate based on title and content
-        query_parts = []
+        # Generate using LLM if available
+        if self.layout_recommender and self.enable_ml_layouts:
+            try:
+                # Create slide content summary
+                content_summary = f"Title: {slide.title}"
+                bullets = slide.get_bullet_texts()
+                if bullets:
+                    content_summary += f" | Content: {'; '.join(bullets[:3])}"
+                    if len(bullets) > 3:
+                        content_summary += f" ... and {len(bullets)-3} more points"
+                
+                # Ask LLM to generate appropriate image query
+                response = self.layout_recommender.client.chat.completions.create(
+                    model="gpt-4o",
+                    messages=[
+                        {
+                            "role": "system", 
+                            "content": "You are an expert at selecting appropriate business images for presentation slides. Generate concise, professional image search queries."
+                        },
+                        {
+                            "role": "user", 
+                            "content": f"Generate a 2-3 word professional image search query for this slide content:\n\n{content_summary}\n\nProvide only the search query, no explanation."
+                        }
+                    ],
+                    temperature=0.1,
+                    max_tokens=20
+                )
+                
+                query = response.choices[0].message.content.strip()
+                # Clean up the query
+                query = query.strip('"').strip("'").strip()
+                
+                if query and len(query.split()) <= 4:  # Reasonable query length
+                    logger.debug(f"LLM generated image query for slide {slide.index}: '{query}'")
+                    return query
+                    
+            except Exception as e:
+                logger.debug(f"LLM image query generation failed for slide {slide.index}: {e}")
         
-        # Extract key terms from title
-        title_words = slide.title.lower().split()
-        business_keywords = {
-            "revenue", "growth", "market", "strategy", "performance", 
-            "analysis", "results", "team", "product", "customer",
-            "innovation", "technology", "partnership", "expansion"
-        }
-        
-        # Find business-relevant words in title
-        for word in title_words:
-            if word in business_keywords or len(word) > 6:  # Longer words are often key terms
-                query_parts.append(word)
-        
-        # Add some context based on slide type
-        if slide.slide_type == "chart":
-            query_parts.append("business analytics")
-        elif slide.slide_type == "content":
-            query_parts.append("business meeting")
-        
-        # Create query
-        if query_parts:
-            query = " ".join(query_parts[:3])  # Limit to 3 terms
-            logger.debug(f"Generated image query for slide {slide.index}: '{query}'")
+        # Simple fallback based on slide title only (no hardcoded keywords)
+        title_words = [word for word in slide.title.split() if len(word) > 4]
+        if title_words:
+            query = " ".join(title_words[:2])  # Use first 2 significant words
+            logger.debug(f"Generated fallback image query for slide {slide.index}: '{query}'")
             return query
         
         return None
 
     def _generate_speaker_notes(self, slide: SlidePlan) -> str:
         """
-        Generate basic speaker notes for a slide.
+        Generate speaker notes using LLM-based content analysis.
         
         Args:
             slide: Slide to generate notes for
@@ -456,15 +627,47 @@ class SlidePlanner:
         Returns:
             Speaker notes text
         """
-        if slide.slide_type == "title":
-            return "Welcome and introduce the presentation topic"
-        elif slide.slide_type == "section":
-            return f"Transition to new section: {slide.title}"
-        elif slide.get_bullet_texts():
+        # Generate using LLM if available
+        if self.layout_recommender and self.enable_ml_layouts:
+            try:
+                # Create slide content summary
+                content_summary = f"Slide Title: {slide.title}"
+                bullets = slide.get_bullet_texts()
+                if bullets:
+                    content_summary += f"\nBullet Points: {'; '.join(bullets)}"
+                content_summary += f"\nSlide Type: {slide.slide_type}"
+                
+                # Ask LLM to generate speaker notes
+                response = self.layout_recommender.client.chat.completions.create(
+                    model="gpt-4o",
+                    messages=[
+                        {
+                            "role": "system", 
+                            "content": "You are an expert presentation coach. Generate concise, helpful speaker notes (1-2 sentences) that guide the presenter on how to deliver this slide effectively."
+                        },
+                        {
+                            "role": "user", 
+                            "content": f"Generate speaker notes for this slide:\n\n{content_summary}\n\nProvide practical guidance for the presenter in 1-2 sentences."
+                        }
+                    ],
+                    temperature=0.3,
+                    max_tokens=100
+                )
+                
+                notes = response.choices[0].message.content.strip()
+                if notes:
+                    logger.debug(f"LLM generated speaker notes for slide {slide.index}")
+                    return notes
+                    
+            except Exception as e:
+                logger.debug(f"LLM speaker notes generation failed for slide {slide.index}: {e}")
+        
+        # Simple fallback based on content only (no hardcoded rules)
+        if slide.get_bullet_texts():
             bullet_count = len(slide.get_bullet_texts())
-            return f"Cover {bullet_count} key points, allowing time for questions"
+            return f"Present the {bullet_count} key points, allowing time for audience engagement"
         else:
-            return f"Present the content of: {slide.title}"
+            return f"Present the content about: {slide.title}"
 
     def _optimize_slide_sequence(
         self, 
