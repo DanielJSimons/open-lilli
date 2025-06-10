@@ -1,22 +1,27 @@
 import os
 import json
+import re
+from datetime import datetime
 from dotenv import load_dotenv
 from flask import Flask, request, jsonify
 from sentence_transformers import SentenceTransformer
 import chromadb
 from chromadb.config import Settings as ChromaSettings
+from openai import OpenAI
 
 script_dir = os.path.dirname(os.path.abspath(__file__))
 repo_root  = os.path.dirname(script_dir)
 load_dotenv(os.path.join(repo_root, ".env"))
 
-PERSIST_DIR     = os.getenv("PERSIST_DIR", os.path.join(repo_root, "proxy_audiences/chroma_db"))
-DATA_DIR        = os.getenv("DATA_DIR", os.path.join(repo_root, "proxy_audiences/147247199_data", "json_simple"))
-COLLECTION_NAME = os.getenv("COLLECTION_NAME", "cramer_windows")
-MODEL_NAME      = os.getenv("MODEL_NAME", "all-MiniLM-L6-v2")
-TELEMETRY       = os.getenv("TELEMETRY", "false").lower() in ("1", "true", "yes")
-WINDOW_SIZE     = int(os.getenv("WINDOW_SIZE", "10"))
-STEP            = int(os.getenv("STEP", "5"))
+PERSIST_DIR        = os.getenv("PERSIST_DIR", os.path.join(repo_root, "proxy_audiences/chroma_db"))
+DATA_DIR           = os.getenv("DATA_DIR", os.path.join(repo_root, "proxy_audiences/147247199_data", "json_simple"))
+COLLECTION_NAME    = os.getenv("COLLECTION_NAME", "cramer_windows")
+MODEL_NAME         = os.getenv("MODEL_NAME", "all-MiniLM-L6-v2")
+TELEMETRY          = os.getenv("TELEMETRY", "false").lower() in ("1", "true", "yes")
+WINDOW_SIZE        = int(os.getenv("WINDOW_SIZE", "10"))
+STEP               = int(os.getenv("STEP", "5"))
+OPENAI_API_KEY     = os.getenv("OPENAI_API_KEY")
+CONFIDENCE_THRESHOLD = float(os.getenv("CONFIDENCE_THRESHOLD", "0.7"))
 
 os.makedirs(PERSIST_DIR, exist_ok=True)
 
@@ -25,13 +30,14 @@ print(f"Reading source data from: {DATA_DIR}  (exists: {os.path.isdir(DATA_DIR)}
 
 
 model = SentenceTransformer(MODEL_NAME)
-client = chromadb.Client(
+chroma_client = chromadb.Client(
     ChromaSettings(
         persist_directory=PERSIST_DIR,
         anonymized_telemetry=TELEMETRY
     )
 )
-collection = client.get_or_create_collection(COLLECTION_NAME)
+collection = chroma_client.get_or_create_collection(COLLECTION_NAME)
+openai_client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
 initial_count = collection.count()
 print(f"Collection '{COLLECTION_NAME}' has {initial_count} embeddings")
 
@@ -48,6 +54,7 @@ if initial_count == 0:
             print(f"Skipping {fname}: {e}")
             continue
 
+        file_date = extract_date_from_filename(fname)
         texts = [e["text"] for e in entries if e.get("speaker") == 1]
         for start in range(0, len(texts), STEP):
             window = texts[start : start + WINDOW_SIZE]
@@ -55,7 +62,7 @@ if initial_count == 0:
                 break
             doc      = " ".join(window)
             chunk_id = f"{fname}_win_{start}"
-            meta     = {"file": fname, "start_idx": start}
+            meta     = {"file": fname, "start_idx": start, "file_date": file_date.isoformat()}
             chunks.append((chunk_id, doc, meta))
 
     for cid, doc, meta in chunks:
@@ -68,11 +75,44 @@ if initial_count == 0:
         )
 
     try:
-        client.persist()
+        chroma_client.persist()
     except AttributeError:
         pass
 
     print(f"Indexed {len(chunks)} windows into '{COLLECTION_NAME}'")
+
+def extract_date_from_filename(filename):
+    """Extract date from filename for prioritization"""
+    date_match = re.search(r'(\d{4}[-_]\d{2}[-_]\d{2})', filename)
+    if date_match:
+        date_str = date_match.group(1).replace('_', '-')
+        try:
+            return datetime.strptime(date_str, '%Y-%m-%d')
+        except:
+            pass
+    return datetime.min
+
+def prioritize_by_date(docs, metas, distances=None):
+    """Sort results by date, newest first"""
+    if distances:
+        combined = list(zip(docs, metas, distances))
+        combined.sort(key=lambda x: datetime.fromisoformat(x[1].get('file_date', '1900-01-01')), reverse=True)
+        return [doc for doc, _, _ in combined], [meta for _, meta, _ in combined], [dist for _, _, dist in combined]
+    else:
+        combined = list(zip(docs, metas))
+        combined.sort(key=lambda x: datetime.fromisoformat(x[1].get('file_date', '1900-01-01')), reverse=True)
+        return [doc for doc, _ in combined], [meta for _, meta in combined]
+
+def should_use_web_search(distances, threshold=CONFIDENCE_THRESHOLD):
+    """Determine if web search should be used based on similarity scores"""
+    if not distances or len(distances) == 0:
+        return True
+    
+    # Convert distance to similarity (lower distance = higher similarity)
+    # ChromaDB uses cosine distance, so similarity = 1 - distance
+    max_similarity = 1 - min(distances)
+    
+    return max_similarity < threshold
 
 app = Flask(__name__)
 app.logger.setLevel("INFO")
@@ -90,21 +130,87 @@ def retrieve():
     except ValueError:
         return jsonify(error="`top_k` must be an integer between 1 and 100"), 400
 
+    # Get confidence threshold from request or use default
+    confidence_threshold = float(request.args.get("confidence_threshold", CONFIDENCE_THRESHOLD))
+    
     embedding = model.encode(query).tolist()
     results   = collection.query(
         query_embeddings=[embedding],
         n_results=top_k,
-        include=["documents", "metadatas"]
+        include=["documents", "metadatas", "distances"]
     )
 
-    docs, metas = results["documents"][0], results["metadatas"][0]
+    docs, metas, distances = results["documents"][0], results["metadatas"][0], results["distances"][0]
+    docs, metas, distances = prioritize_by_date(docs, metas, distances)
+    
+    # Determine if web search should be used based on confidence
+    force_web_search = request.args.get("web_search", "false").lower() == "true"
+    auto_web_search = should_use_web_search(distances, confidence_threshold)
+    use_web_search = force_web_search or auto_web_search
+    
+    web_results = []
+    web_search_reason = None
+    
+    if use_web_search and openai_client:
+        try:
+            completion = openai_client.chat.completions.create(
+                model="gpt-4o-search-preview",
+                web_search_options={"search_context_size": "low"},
+                messages=[{"role": "user", "content": query}]
+            )
+            web_results = [completion.choices[0].message.content]
+            web_search_reason = "forced" if force_web_search else f"low_confidence (max_similarity: {1 - min(distances):.3f})"
+        except Exception as e:
+            app.logger.warning("Web search failed: %s", e)
 
-    app.logger.info("Query: %r → %d hits", query, len(docs))
-    for i, (doc, meta) in enumerate(zip(docs, metas), start=1):
+    app.logger.info("Query: %r → %d hits (max_similarity: %.3f)", query, len(docs), 1 - min(distances) if distances else 0)
+    for i, (doc, meta, dist) in enumerate(zip(docs, metas, distances), start=1):
         snippet = doc.replace("\n", " ")[:80] + "…"
-        app.logger.info("  %d) %s  %r", i, meta, snippet)
+        app.logger.info("  %d) %s  similarity: %.3f  %r", i, meta, 1-dist, snippet)
 
-    return jsonify(query=query, top_k=top_k, documents=docs, metadatas=metas)
+    response = {
+        "query": query, 
+        "top_k": top_k, 
+        "documents": docs, 
+        "metadatas": metas,
+        "similarities": [1-d for d in distances],
+        "confidence_threshold": confidence_threshold,
+        "max_similarity": 1 - min(distances) if distances else 0
+    }
+    
+    if web_results:
+        response["web_search_results"] = web_results
+        response["web_search_reason"] = web_search_reason
+    elif auto_web_search and not openai_client:
+        response["web_search_skipped"] = "OpenAI API key not configured"
+        
+    return jsonify(response)
+
+@app.route("/search", methods=["GET"])
+def search():
+    """Dedicated web search endpoint"""
+    query = (request.args.get("query") or "").strip()
+    if not query:
+        return jsonify(error="`query` parameter is required"), 400
+        
+    if not openai_client:
+        return jsonify(error="OpenAI API key not configured"), 500
+        
+    try:
+        completion = openai_client.chat.completions.create(
+            model="gpt-4o-search-preview",
+            web_search_options={"search_context_size": "low"},
+            messages=[{"role": "user", "content": query}]
+        )
+        
+        return jsonify({
+            "query": query,
+            "result": completion.choices[0].message.content
+        })
+        
+    except Exception as e:
+        app.logger.error("Web search error: %s", e)
+        return jsonify(error="Web search failed"), 500
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8000))
