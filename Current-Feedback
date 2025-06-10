@@ -1,46 +1,111 @@
-2025-06-09 22:17:04,292 - DEBUG - Layout 52: Found real name 'Blank | Brunswick Blue'
-2025-06-09 22:17:04,292 - DEBUG - Layout 53: Found real name '1_Design only - do not use'
-2025-06-09 22:17:04,294 - DEBUG - Could not extract visual properties: fill type _NoFill has no foreground color, call .solid() or .patterned() first
-2025-06-09 22:17:04,296 - WARNING - Error extracting shapes: shape is not a placeholder
-2025-06-09 22:17:04,298 - DEBUG - Grid detection failed: shape is not a placeholder
-2025-06-09 22:17:04,300 - DEBUG - Zone mapping failed: shape is not a placeholder
-2025-06-09 22:17:04,302 - ERROR - Failed to extract visual data for layout 0: shape is not a placeholder
-⠼ 📋 Planning slide layouts...2025-06-09 22:17:04,303 - WARNING - Error extracting shapes: shape is not a placeholder
-2025-06-09 22:17:04,304 - DEBUG - Grid detection failed: shape is not a placeholder
-2025-06-09 22:17:04,304 - DEBUG - Zone mapping failed: shape is not a placeholder
-2025-06-09 22:17:04,304 - ERROR - Failed to extract visual data for layout 3: shape is not a placeholder
-2025-06-09 22:17:04,305 - WARNING - Error extracting shapes: shape is not a placeholder
-2025-06-09 22:17:04,305 - DEBUG - Grid detection failed: shape is not a placeholder
-2025-06-09 22:17:04,305 - DEBUG - Zone mapping failed: shape is not a placeholder
-2025-06-09 22:17:04,306 - ERROR - Failed to extract visual data for layout 5: shape is not a placeholder
-2025-06-09 22:17:04,307 - DEBUG - Could not extract visual properties: fill type _NoFill has no foreground color, call .solid() or .patterned() first
-2025-06-09 22:17:04,307 - WARNING - Error extracting shapes: shape is not a placeholder
-2025-06-09 22:17:04,307 - DEBUG - Grid detection failed: shape is not a placeholder
-2025-06-09 22:17:04,308 - DEBUG - Zone mapping failed: shape is not a placeholder
-2025-06-09 22:17:04,309 - ERROR - Failed to extract visual data for layout 7: shape is not a placeholder
-2025-06-09 22:17:04,315 - DEBUG - Failed to analyze placeholder 0: 'TemplateParser' object has no attribute '_extract_placeholder_formatting'
-2025-06-09 22:17:04,316 - DEBUG - Failed to analyze placeholder 1: 'TemplateParser' object has no attribute '_extract_placeholder_formatting'
-2025-06-09 22:17:04,318 - DEBUG - Failed to analyze placeholder 0: 'TemplateParser' object has no attribute '_extract_placeholder_formatting'
-2025-06-09 22:17:04,319 - DEBUG - Failed to analyze placeholder 1: 'TemplateParser' object has no attribute '_extract_placeholder_formatting'
-2025-06-09 22:17:04,321 - DEBUG - Extracted visual data for layout 9: 2 total shapes
-2025-06-09 22:17:04,326 - DEBUG - Failed to analyze placeholder 0: 'TemplateParser' object has no attribute '_extract_placeholder_formatting'
-2025-06-09 22:17:04,327 - DEBUG - Failed to analyze placeholder 1: 'TemplateParser' object has no attribute '_extract_placeholder_formatting'
-2025-06-09 22:17:04,327 - DEBUG - Failed to analyze placeholder 2: 'TemplateParser' object has no attribute '_extract_placeholder_formatting'
-2025-06-09 22:17:04,328 - DEBUG - Failed to analyze placeholder 0: 'TemplateParser' object has no attribute '_extract_placeholder_formatting'
-2025-06-09 22:17:04,329 - DEBUG - Failed to analyze placeholder 1: 'TemplateParser' object has no attribute '_extract_placeholder_formatting'
-2025-06-09 22:17:04,329 - DEBUG - Failed to analyze placeholder 2: 'TemplateParser' object has no attribute '_extract_placeholder_formatting'
-2025-06-09 22:17:04,330 - DEBUG - Extracted visual data for layout 11: 3 total shapes
-2025-06-09 22:17:04,337 - DEBUG - Could not extract visual properties: fill type _NoFill has no foreground color, call .solid() or .patterned() first
-2025-06-09 22:17:04,338 - WARNING - Error extracting shapes: shape is not a placeholder
-2025-06-09 22:17:04,339 - DEBUG - Grid detection failed: shape is not a placeholder
-2025-06-09 22:17:04,340 - DEBUG - Zone mapping failed: shape is not a placeholder
-2025-06-09 22:17:04,341 - ERROR - Failed to extract visual data for layout 19: shape is not a placeholder
-2025-06-09 22:17:04,343 - DEBUG - Could not extract visual properties: fill type _NoFill has no foreground color, call .solid() or .patterned() first
-2025-06-09 22:17:04,343 - WARNING - Error extracting shapes: shape is not a placeholder
-2025-06-09 22:17:04,344 - DEBUG - Grid detection failed: shape is not a placeholder
-2025-06-09 22:17:04,344 - DEBUG - Zone mapping failed: shape is not a placeholder
-2025-06-09 22:17:04,345 - ERROR - Failed to extract visual data for layout 27: shape is not a placeholder
-2025-06-09 22:17:04,346 - WARNING - Error extracting shapes: shape is not a placeholder
-2025-06-09 22:17:04,347 - DEBUG - Grid detection failed: shape is not a placeholder
-2025-06-09 22:17:04,347 - DEBUG - Zone mapping failed: shape is not a placeholder
-2025-06-09 22:17:04,348 - ERROR - Failed to extract visual data for layout 46: shape is not a placeholder
+import os
+import json
+from dotenv import load_dotenv
+from flask import Flask, request, jsonify
+from sentence_transformers import SentenceTransformer
+import chromadb
+from chromadb.config import Settings as ChromaSettings
+
+script_dir = os.path.dirname(os.path.abspath(__file__))
+repo_root  = os.path.dirname(script_dir)
+load_dotenv(os.path.join(repo_root, ".env"))
+
+PERSIST_DIR     = os.getenv("PERSIST_DIR", os.path.join(repo_root, "proxy_audiences/chroma_db"))
+DATA_DIR        = os.getenv("DATA_DIR", os.path.join(repo_root, "proxy_audiences/147247199_data", "json_simple"))
+COLLECTION_NAME = os.getenv("COLLECTION_NAME", "cramer_windows")
+MODEL_NAME      = os.getenv("MODEL_NAME", "all-MiniLM-L6-v2")
+TELEMETRY       = os.getenv("TELEMETRY", "false").lower() in ("1", "true", "yes")
+WINDOW_SIZE     = int(os.getenv("WINDOW_SIZE", "10"))
+STEP            = int(os.getenv("STEP", "5"))
+
+os.makedirs(PERSIST_DIR, exist_ok=True)
+
+print(f"Using Chroma DB at: {PERSIST_DIR}  (exists: {os.path.isdir(PERSIST_DIR)})")
+print(f"Reading source data from: {DATA_DIR}  (exists: {os.path.isdir(DATA_DIR)})")
+
+
+model = SentenceTransformer(MODEL_NAME)
+client = chromadb.Client(
+    ChromaSettings(
+        persist_directory=PERSIST_DIR,
+        anonymized_telemetry=TELEMETRY
+    )
+)
+collection = client.get_or_create_collection(COLLECTION_NAME)
+initial_count = collection.count()
+print(f"Collection '{COLLECTION_NAME}' has {initial_count} embeddings")
+
+
+if initial_count == 0:
+    print("No embeddings found—running ingestion")
+    chunks = []
+    for fname in sorted(f for f in os.listdir(DATA_DIR) if f.endswith(".json")):
+        path = os.path.join(DATA_DIR, fname)
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                entries = json.load(f)
+        except Exception as e:
+            print(f"Skipping {fname}: {e}")
+            continue
+
+        texts = [e["text"] for e in entries if e.get("speaker") == 1]
+        for start in range(0, len(texts), STEP):
+            window = texts[start : start + WINDOW_SIZE]
+            if not window:
+                break
+            doc      = " ".join(window)
+            chunk_id = f"{fname}_win_{start}"
+            meta     = {"file": fname, "start_idx": start}
+            chunks.append((chunk_id, doc, meta))
+
+    for cid, doc, meta in chunks:
+        emb = model.encode(doc).tolist()
+        collection.add(
+            ids=[cid],
+            embeddings=[emb],
+            documents=[doc],
+            metadatas=[meta]
+        )
+
+    try:
+        client.persist()
+    except AttributeError:
+        pass
+
+    print(f"Indexed {len(chunks)} windows into '{COLLECTION_NAME}'")
+
+app = Flask(__name__)
+app.logger.setLevel("INFO")
+
+@app.route("/retrieve", methods=["GET"])
+def retrieve():
+    query = (request.args.get("query") or "").strip()
+    if not query:
+        return jsonify(error="`query` parameter is required"), 400
+
+    try:
+        top_k = int(request.args.get("top_k", "10"))
+        if not (5 <= top_k <= 20):
+            raise ValueError()
+    except ValueError:
+        return jsonify(error="`top_k` must be an integer between 1 and 100"), 400
+
+    embedding = model.encode(query).tolist()
+    results   = collection.query(
+        query_embeddings=[embedding],
+        n_results=top_k,
+        include=["documents", "metadatas"]
+    )
+
+    docs, metas = results["documents"][0], results["metadatas"][0]
+
+    app.logger.info("Query: %r → %d hits", query, len(docs))
+    for i, (doc, meta) in enumerate(zip(docs, metas), start=1):
+        snippet = doc.replace("\n", " ")[:80] + "…"
+        app.logger.info("  %d) %s  %r", i, meta, snippet)
+
+    return jsonify(query=query, top_k=top_k, documents=docs, metadatas=metas)
+
+if __name__ == "__main__":
+    port = int(os.getenv("PORT", 8000))
+    app.run(host="0.0.0.0", port=port, debug=True, use_reloader=False)
